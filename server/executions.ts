@@ -13,26 +13,47 @@ function fmtToolInput(name: string, input: Record<string, unknown>): string {
 
 function makeStreamJsonParser(onText: (text: string) => void): (chunk: string) => void {
   let buf = "";
-  // Deduplicate tool calls — --include-partial-messages fires multiple assistant events
-  const shownToolIds = new Set<string>();
+  // Track tool_use blocks being assembled via stream_events (index → block state)
+  const toolBlocks = new Map<number, { name: string; inputJson: string }>();
 
-  function handle(ev: Record<string, unknown>): string {
-    // Streaming text tokens
-    if (ev.type === "stream_event") {
-      const delta = ((ev.event as Record<string, unknown>)?.delta) as Record<string, unknown> | undefined;
-      if (delta?.type === "text_delta") return (delta.text as string) ?? "";
+  function handleStreamEvent(event: Record<string, unknown>): string {
+    const type = event.type as string;
+
+    if (type === "content_block_start") {
+      const block = event.content_block as Record<string, unknown> | undefined;
+      if (block?.type === "tool_use") {
+        toolBlocks.set(event.index as number, { name: block.name as string, inputJson: "" });
+      }
+      return "";
     }
 
-    // Assistant message — show any tool_use blocks not yet shown
-    if (ev.type === "assistant") {
-      const content = ((ev.message as Record<string, unknown>)?.content as Record<string, unknown>[]) ?? [];
-      return content
-        .filter((b) => b.type === "tool_use" && !shownToolIds.has(b.id as string))
-        .map((b) => {
-          shownToolIds.add(b.id as string);
-          return `\n\x1b[36m▶ ${b.name}\x1b[0m ${fmtToolInput(b.name as string, (b.input ?? {}) as Record<string, unknown>)}\n`;
-        })
-        .join("");
+    if (type === "content_block_delta") {
+      const delta = event.delta as Record<string, unknown> | undefined;
+      if (delta?.type === "text_delta") return (delta.text as string) ?? "";
+      if (delta?.type === "input_json_delta") {
+        const block = toolBlocks.get(event.index as number);
+        if (block) block.inputJson += (delta.partial_json as string) ?? "";
+      }
+      return "";
+    }
+
+    if (type === "content_block_stop") {
+      const block = toolBlocks.get(event.index as number);
+      if (block) {
+        toolBlocks.delete(event.index as number);
+        let input: Record<string, unknown> = {};
+        try { input = JSON.parse(block.inputJson || "{}"); } catch { /* partial input */ }
+        return `\n\x1b[36m▶ ${block.name}\x1b[0m ${fmtToolInput(block.name, input)}\n`;
+      }
+      return "";
+    }
+
+    return "";
+  }
+
+  function handle(ev: Record<string, unknown>): string {
+    if (ev.type === "stream_event") {
+      return handleStreamEvent((ev.event as Record<string, unknown>) ?? {});
     }
 
     // User message — show tool results (truncated)
