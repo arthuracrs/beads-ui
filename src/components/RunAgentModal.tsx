@@ -18,6 +18,12 @@ function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
 }
 
+// POSIX shell-quote: wrap in single quotes and escape any embedded single quote.
+// Safe against `<`, `>`, `"`, `$`, backticks, newlines, etc.
+function shQuote(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
 function buildCommand(runtime: AgentRuntime, prompt: string, issue: Issue): string {
   const vars: Record<string, string> = {
     id: issue.id,
@@ -28,7 +34,12 @@ function buildCommand(runtime: AgentRuntime, prompt: string, issue: Issue): stri
     type: issue.issue_type,
   };
   const resolvedPrompt = interpolate(prompt, vars);
-  return interpolate(runtime.commandTemplate, { prompt: resolvedPrompt });
+  // Only auto-quote {prompt} for the built-in runtimes whose templates we own.
+  // The "custom" builtin and any user-defined runtimes are passed through verbatim
+  // — those templates may already include their own quoting.
+  const autoQuote = runtime.builtin && runtime.id !== "custom";
+  const promptArg = autoQuote ? shQuote(resolvedPrompt) : resolvedPrompt;
+  return interpolate(runtime.commandTemplate, { prompt: promptArg });
 }
 
 function RuntimeIcon({ id }: { id: string }) {

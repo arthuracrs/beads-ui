@@ -8,19 +8,21 @@ exports.getRuntime = getRuntime;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const os_1 = __importDefault(require("os"));
+// NOTE: {prompt} is shell-quoted by the client (RunAgentModal.buildCommand) for
+// every non-`custom` runtime, so templates must NOT wrap it in their own quotes.
 const BUILTINS = [
     {
         id: "claude-code",
         name: "Claude Code",
         description: "Anthropic Claude Code CLI",
-        commandTemplate: `claude --dangerously-skip-permissions -p "{prompt}" --output-format stream-json --verbose --include-partial-messages`,
+        commandTemplate: `claude --dangerously-skip-permissions -p {prompt} --output-format stream-json --verbose --include-partial-messages`,
         builtin: true,
     },
     {
         id: "cursor",
         name: "Cursor",
         description: "Cursor AI agent CLI (--force applies changes directly)",
-        commandTemplate: `agent -p --force "{prompt}"`,
+        commandTemplate: `agent -p --force {prompt}`,
         builtin: true,
     },
     {
