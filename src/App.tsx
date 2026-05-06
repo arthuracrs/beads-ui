@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
-import type { Issue, Status, IssueType } from "./types";
+import type { Issue, Stats } from "./types";
 import { Sidebar, type View } from "./components/Sidebar";
 import { IssueRow } from "./components/IssueRow";
+import { KanbanBoard } from "./components/KanbanBoard";
 import { IssueDetail } from "./components/IssueDetail";
 import { CreateIssueModal } from "./components/CreateIssueModal";
 import { StatsBar } from "./components/StatsBar";
-import type { Stats } from "./types";
 
 const STATUS_VIEWS = new Set(["open", "in_progress", "blocked", "deferred", "closed"]);
 const TYPE_VIEWS = new Set(["bug", "feature", "task", "epic", "chore"]);
@@ -18,8 +18,26 @@ function viewToParams(view: View): Record<string, string> | undefined {
   return undefined;
 }
 
+type Layout = "list" | "board";
+
+const viewLabel: Record<View, string> = {
+  all: "All Issues",
+  ready: "Ready to Work",
+  open: "Open",
+  in_progress: "In Progress",
+  blocked: "Blocked",
+  deferred: "Deferred",
+  closed: "Closed",
+  bug: "Bugs",
+  feature: "Features",
+  task: "Tasks",
+  epic: "Epics",
+  chore: "Chores",
+};
+
 export default function App() {
   const [view, setView] = useState<View>("all");
+  const [layout, setLayout] = useState<Layout>("list");
   const [issues, setIssues] = useState<Issue[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,21 +111,6 @@ export default function App() {
     loadStats();
   }
 
-  const viewLabel: Record<View, string> = {
-    all: "All Issues",
-    ready: "Ready to Work",
-    open: "Open",
-    in_progress: "In Progress",
-    blocked: "Blocked",
-    deferred: "Deferred",
-    closed: "Closed",
-    bug: "Bugs",
-    feature: "Features",
-    task: "Tasks",
-    epic: "Epics",
-    chore: "Chores",
-  };
-
   if (initialized === null) {
     return (
       <div className="flex h-screen items-center justify-center text-[var(--text-muted)]">
@@ -132,12 +135,13 @@ export default function App() {
           {initializing ? "Initializing…" : "Initialize Beads"}
         </button>
         <p className="text-xs text-[var(--text-muted)]">
-          Runs <code className="font-mono bg-[var(--surface2)] px-1 py-0.5 rounded">bd init</code> in the server's working directory.
-          Set <code className="font-mono bg-[var(--surface2)] px-1 py-0.5 rounded">BEADS_DIR</code> env var to point at an existing database.
+          Runs <code className="font-mono bg-[var(--surface2)] px-1 py-0.5 rounded">bd init</code> in the current directory.
         </p>
       </div>
     );
   }
+
+  const showKanban = layout === "board" && view !== "ready";
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -159,8 +163,35 @@ export default function App() {
             />
           )}
 
-          <div className="ml-auto flex items-center gap-4">
+          <div className="ml-auto flex items-center gap-3">
             <StatsBar stats={stats} />
+
+            {/* Layout toggle */}
+            <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
+              <button
+                onClick={() => setLayout("list")}
+                title="List view"
+                className={`px-2.5 py-1.5 text-sm transition-colors ${
+                  layout === "list"
+                    ? "bg-[var(--surface2)] text-[var(--text)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                ≡
+              </button>
+              <button
+                onClick={() => setLayout("board")}
+                title="Board view"
+                className={`px-2.5 py-1.5 text-sm transition-colors border-l border-[var(--border)] ${
+                  layout === "board"
+                    ? "bg-[var(--surface2)] text-[var(--text)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                ⊞
+              </button>
+            </div>
+
             <button
               onClick={() => setShowCreate(true)}
               className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-[var(--bg)] hover:opacity-90 transition-opacity"
@@ -177,43 +208,51 @@ export default function App() {
           </div>
         </div>
 
-        {/* Issue list */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {loading && (
-            <div className="flex h-32 items-center justify-center text-[var(--text-muted)] text-sm">
-              Loading…
-            </div>
-          )}
+        {/* Content */}
+        {loading && (
+          <div className="flex flex-1 items-center justify-center text-[var(--text-muted)] text-sm">
+            Loading…
+          </div>
+        )}
 
-          {!loading && error && (
-            <div className="rounded-lg border border-[var(--red)]/30 bg-[var(--red)]/10 p-4 text-sm text-[var(--red)]">
-              {error}
-            </div>
-          )}
+        {!loading && error && (
+          <div className="m-5 rounded-lg border border-[var(--red)]/30 bg-[var(--red)]/10 p-4 text-sm text-[var(--red)]">
+            {error}
+          </div>
+        )}
 
-          {!loading && !error && issues.length === 0 && (
-            <div className="flex h-32 flex-col items-center justify-center gap-2 text-[var(--text-muted)]">
-              <span className="text-2xl">○</span>
-              <span className="text-sm">No issues found</span>
-              {view === "ready" && (
-                <span className="text-xs">All tasks have open blockers or are closed.</span>
-              )}
-            </div>
-          )}
+        {!loading && !error && issues.length === 0 && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-[var(--text-muted)]">
+            <span className="text-2xl">○</span>
+            <span className="text-sm">No issues found</span>
+            {view === "ready" && (
+              <span className="text-xs">All tasks have open blockers or are closed.</span>
+            )}
+          </div>
+        )}
 
-          {!loading && !error && issues.length > 0 && (
-            <div className="space-y-2">
-              <div className="mb-3 text-xs text-[var(--text-muted)]">{issues.length} issue{issues.length !== 1 ? "s" : ""}</div>
-              {issues.map((issue) => (
-                <IssueRow
-                  key={issue.id}
-                  issue={issue}
-                  onClick={() => setSelectedId(issue.id)}
-                />
-              ))}
+        {!loading && !error && issues.length > 0 && (
+          showKanban ? (
+            <div className="flex-1 overflow-hidden">
+              <KanbanBoard issues={issues} onSelect={setSelectedId} />
             </div>
-          )}
-        </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <div className="mb-3 text-xs text-[var(--text-muted)]">
+                {issues.length} issue{issues.length !== 1 ? "s" : ""}
+              </div>
+              <div className="space-y-2">
+                {issues.map((issue) => (
+                  <IssueRow
+                    key={issue.id}
+                    issue={issue}
+                    onClick={() => setSelectedId(issue.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        )}
       </main>
 
       {selectedId && (
