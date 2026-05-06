@@ -8,39 +8,11 @@ interface Props {
   onStarted: (exec: AgentExecution) => void;
 }
 
-const DEFAULT_PROMPT = `Work on beads issue {id}. Load the issue using bd show {id}, then complete the task using only the information available. Do not ask for more information. If you need more information from a person, leave a comment on the issue with specific instructions on what information you need and dont move the issue to done. 
+const DEFAULT_PROMPT = `Work on beads issue {id} (full context already prepended above). Complete the task using only the information available. Do not ask for more information. If you need more information from a person, leave a comment on the issue with specific instructions on what information you need and dont move the issue to done.
 
 When done:
 1. Run: bd comment {id} "<brief summary of what was done and proof of completion>"
 2. Run: bd close {id}`;
-
-function interpolate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
-}
-
-// POSIX shell-quote: wrap in single quotes and escape any embedded single quote.
-// Safe against `<`, `>`, `"`, `$`, backticks, newlines, etc.
-function shQuote(s: string): string {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
-}
-
-function buildCommand(runtime: AgentRuntime, prompt: string, issue: Issue): string {
-  const vars: Record<string, string> = {
-    id: issue.id,
-    title: issue.title,
-    description: issue.description ?? "",
-    status: issue.status,
-    priority: String(issue.priority),
-    type: issue.issue_type,
-  };
-  const resolvedPrompt = interpolate(prompt, vars);
-  // Only auto-quote {prompt} for the built-in runtimes whose templates we own.
-  // The "custom" builtin and any user-defined runtimes are passed through verbatim
-  // — those templates may already include their own quoting.
-  const autoQuote = runtime.builtin && runtime.id !== "custom";
-  const promptArg = autoQuote ? shQuote(resolvedPrompt) : resolvedPrompt;
-  return interpolate(runtime.commandTemplate, { prompt: promptArg });
-}
 
 function RuntimeIcon({ id }: { id: string }) {
   if (id === "claude-code") return <span className="text-[var(--purple)]">◎</span>;
@@ -60,8 +32,6 @@ export function RunAgentModal({ issue, onClose, onStarted }: Props) {
   }, []);
 
   const runtime = runtimes.find((r) => r.id === runtimeId) ?? runtimes[0];
-  const isCustom = runtime?.id === "custom";
-  const preview = runtime ? buildCommand(runtime, prompt, issue) : "";
 
   async function handleRun(e: React.FormEvent) {
     e.preventDefault();
@@ -69,7 +39,7 @@ export function RunAgentModal({ issue, onClose, onStarted }: Props) {
     setLoading(true);
     setError("");
     try {
-      const exec = await api.executions.start(issue.id, buildCommand(runtime, prompt, issue));
+      const exec = await api.executions.start(issue.id, runtime.id, prompt);
       onStarted(exec);
     } catch (err: unknown) {
       setError((err as Error).message);
@@ -115,9 +85,7 @@ export function RunAgentModal({ issue, onClose, onStarted }: Props) {
 
         <form onSubmit={handleRun} className="space-y-4">
           <div>
-            <label className="mb-1 block text-xs text-[var(--text-muted)]">
-              {isCustom ? "Full command" : "Prompt"}
-            </label>
+            <label className="mb-1 block text-xs text-[var(--text-muted)]">Prompt</label>
             <textarea
               autoFocus
               rows={3}
@@ -125,21 +93,14 @@ export function RunAgentModal({ issue, onClose, onStarted }: Props) {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
             />
-            {!isCustom && (
-              <p className="mt-1 text-[10px] text-[var(--text-muted)]">
-                Variables: <code>{"{id}"}</code> <code>{"{title}"}</code> <code>{"{description}"}</code> <code>{"{status}"}</code> <code>{"{priority}"}</code>
-              </p>
-            )}
+            <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+              Variables: <code>{"{id}"}</code> <code>{"{title}"}</code> <code>{"{description}"}</code> <code>{"{status}"}</code> <code>{"{priority}"}</code>
+            </p>
           </div>
 
-          {!isCustom && (
-            <div>
-              <div className="mb-1 text-xs text-[var(--text-muted)]">Full command preview</div>
-              <pre className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-xs text-[var(--text-muted)] whitespace-pre-wrap break-all">
-                {preview}
-              </pre>
-            </div>
-          )}
+          <p className="text-[10px] text-[var(--text-muted)]">
+            The output of <code>bd show {issue.id}</code> is fetched server-side and prepended to your prompt before the agent runs.
+          </p>
 
           {error && (
             <p className="rounded-md bg-[var(--red)]/10 px-3 py-2 text-xs text-[var(--red)]">{error}</p>

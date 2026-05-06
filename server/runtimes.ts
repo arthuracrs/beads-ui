@@ -10,8 +10,8 @@ export interface AgentRuntime {
   builtin: boolean;
 }
 
-// NOTE: {prompt} is shell-quoted by the client (RunAgentModal.buildCommand) for
-// every non-`custom` runtime, so templates must NOT wrap it in their own quotes.
+// NOTE: {prompt} is shell-quoted server-side, so templates must NOT wrap it
+// in their own quotes.
 const BUILTINS: AgentRuntime[] = [
   {
     id: "claude-code",
@@ -25,13 +25,6 @@ const BUILTINS: AgentRuntime[] = [
     name: "Cursor",
     description: "Cursor AI agent CLI (--force applies changes directly)",
     commandTemplate: `agent -p --force {prompt}`,
-    builtin: true,
-  },
-  {
-    id: "custom",
-    name: "Custom",
-    description: "Write the full command yourself — {prompt} is passed through as-is",
-    commandTemplate: `{prompt}`,
     builtin: true,
   },
 ];

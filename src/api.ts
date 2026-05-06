@@ -61,11 +61,11 @@ export const api = {
   },
   executions: {
     list: (issueId: string) => req<AgentExecution[]>(`/executions/issue/${issueId}`),
-    start: (issueId: string, command: string) =>
+    start: (issueId: string, runtimeId: string, prompt: string) =>
       req<AgentExecution>("/executions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueId, command }),
+        body: JSON.stringify({ issueId, runtimeId, prompt }),
       }),
     cancel: (id: string) =>
       req<{ ok: boolean }>(`/executions/${id}`, { method: "DELETE" }),
