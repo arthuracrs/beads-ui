@@ -49,3 +49,35 @@ export interface Stats {
   summary?: StatsSummary;
   [key: string]: unknown;
 }
+
+export interface AgentRuntime {
+  id: string;
+  name: string;
+  description: string;
+  commandTemplate: string;
+  builtin: boolean;
+}
+
+export type ExecStatus = "running" | "completed" | "failed" | "cancelled";
+
+export interface AgentExecution {
+  id: string;
+  issueId: string;
+  command: string;
+  status: ExecStatus;
+  output: string;
+  exitCode?: number;
+  startedAt: string;
+  finishedAt?: string;
+  triggeredBy: string;
+}
+
+export interface AgentTrigger {
+  id: string;
+  issueId: string;
+  name: string;
+  condition: "execution_completed" | "execution_failed";
+  command: string;
+  enabled: boolean;
+  createdAt: string;
+}

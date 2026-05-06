@@ -5,6 +5,7 @@ import { Sidebar, type View } from "./components/Sidebar";
 import { IssueRow } from "./components/IssueRow";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { IssueDetail } from "./components/IssueDetail";
+import { ExecutionView } from "./components/ExecutionView";
 import { CreateIssueModal } from "./components/CreateIssueModal";
 import { StatsBar } from "./components/StatsBar";
 
@@ -44,6 +45,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [initialized, setInitialized] = useState<boolean | null>(null);
   const [initializing, setInitializing] = useState(false);
@@ -260,6 +262,14 @@ export default function App() {
           issueId={selectedId}
           onClose={() => setSelectedId(null)}
           onUpdated={handleUpdated}
+          onOpenExecution={setSelectedExecutionId}
+        />
+      )}
+
+      {selectedExecutionId && (
+        <ExecutionView
+          executionId={selectedExecutionId}
+          onClose={() => setSelectedExecutionId(null)}
         />
       )}
 

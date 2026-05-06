@@ -4,8 +4,11 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import os from "os";
+import * as Execs from "./executions";
+import * as Runtimes from "./runtimes";
 
 const execAsync = promisify(exec);
+console.log("sucesso meu parceiro");
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -234,6 +237,100 @@ app.post("/api/init", async (req, res) => {
     res.status(500).json({ error: e.stderr || e.message });
   }
 });
+
+// ── Agent Runtimes ────────────────────────────────────────────────────────────
+
+app.get("/api/runtimes", (_req, res) => {
+  res.json(Runtimes.listRuntimes());
+});
+
+// ── Agent Executions ──────────────────────────────────────────────────────────
+
+// GET /api/executions/issue/:issueId
+app.get("/api/executions/issue/:issueId", (req, res) => {
+  res.json(Execs.getExecutionsForIssue(req.params.issueId));
+});
+
+// POST /api/executions
+app.post("/api/executions", (req, res) => {
+  const { issueId, command } = req.body as { issueId: string; command: string };
+  if (!issueId || !command) {
+    res.status(400).json({ error: "issueId and command are required" });
+    return;
+  }
+  const execution = Execs.startExecution(issueId, command, "manual", PROJECT_DIR);
+  res.json(execution);
+});
+
+// DELETE /api/executions/:id  (cancel)
+app.delete("/api/executions/:id", (req, res) => {
+  const ok = Execs.cancelExecution(req.params.id);
+  res.json({ ok });
+});
+
+// GET /api/executions/:id/stream  (SSE — live output)
+app.get("/api/executions/:id/stream", (req, res) => {
+  const execution = Execs.getExecution(req.params.id);
+  if (!execution) {
+    res.status(404).json({ error: "Execution not found" });
+    return;
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const send = (payload: object) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+
+  // Replay existing output first
+  if (execution.output) send({ type: "output", data: execution.output });
+
+  // If already finished, close immediately
+  if (execution.status !== "running") {
+    send({ type: "done", status: execution.status, exitCode: execution.exitCode });
+    res.end();
+    return;
+  }
+
+  const unsub = Execs.subscribeToExecution(req.params.id, (chunk, done, status, exitCode) => {
+    if (chunk) send({ type: "output", data: chunk });
+    if (done) {
+      send({ type: "done", status, exitCode });
+      res.end();
+    }
+  });
+
+  req.on("close", unsub);
+});
+
+// ── Triggers ──────────────────────────────────────────────────────────────────
+
+// GET /api/triggers/issue/:issueId
+app.get("/api/triggers/issue/:issueId", (req, res) => {
+  res.json(Execs.getTriggersForIssue(req.params.issueId));
+});
+
+// POST /api/triggers
+app.post("/api/triggers", (req, res) => {
+  const trigger = Execs.createTrigger(req.body);
+  res.json(trigger);
+});
+
+// PATCH /api/triggers/:id
+app.patch("/api/triggers/:id", (req, res) => {
+  const trigger = Execs.updateTrigger(req.params.id, req.body);
+  if (!trigger) { res.status(404).json({ error: "Trigger not found" }); return; }
+  res.json(trigger);
+});
+
+// DELETE /api/triggers/:id
+app.delete("/api/triggers/:id", (req, res) => {
+  Execs.deleteTrigger(req.params.id);
+  res.json({ ok: true });
+});
+
+// ── Static (must be last) ─────────────────────────────────────────────────────
 
 // Serve built React app (production mode)
 const distPath = path.join(__dirname, "../dist");

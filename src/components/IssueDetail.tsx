@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
 import type { Issue, Status, IssueType } from "../types";
 import { StatusBadge, TypeBadge, PriorityBadge } from "./Badge";
+import { AgentsPanel } from "./AgentsPanel";
 
 interface Props {
   issueId: string;
   onClose: () => void;
   onUpdated: () => void;
+  onOpenExecution: (id: string) => void;
 }
 
 const statuses: Status[] = ["open", "in_progress", "blocked", "deferred", "closed"];
@@ -17,7 +19,7 @@ function fmt(d: string | undefined) {
   return new Date(d).toLocaleString();
 }
 
-export function IssueDetail({ issueId, onClose, onUpdated }: Props) {
+export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Props) {
   const [issue, setIssue] = useState<Issue | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -271,6 +273,12 @@ export function IssueDetail({ issueId, onClose, onUpdated }: Props) {
                   </button>
                 )}
               </div>
+            </section>
+
+            {/* Agent Runs */}
+            <section className="mb-4">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Agents</h3>
+              <AgentsPanel issue={issue} onOpenExecution={onOpenExecution} />
             </section>
 
             {/* Comments */}

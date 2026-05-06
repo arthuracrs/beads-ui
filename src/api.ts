@@ -1,4 +1,4 @@
-import type { Issue, Stats } from "./types";
+import type { Issue, Stats, AgentExecution, AgentTrigger, AgentRuntime } from "./types";
 
 const BASE = "/api";
 
@@ -55,6 +55,51 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ child, parent, type }),
       }),
+  },
+  runtimes: {
+    list: () => req<AgentRuntime[]>("/runtimes"),
+    create: (data: Omit<AgentRuntime, "id" | "builtin">) =>
+      req<AgentRuntime>("/runtimes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    update: (id: string, patch: Partial<Omit<AgentRuntime, "id" | "builtin">>) =>
+      req<AgentRuntime>(`/runtimes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      }),
+    delete: (id: string) =>
+      req<{ ok: boolean }>(`/runtimes/${id}`, { method: "DELETE" }),
+  },
+  executions: {
+    list: (issueId: string) => req<AgentExecution[]>(`/executions/issue/${issueId}`),
+    start: (issueId: string, command: string) =>
+      req<AgentExecution>("/executions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ issueId, command }),
+      }),
+    cancel: (id: string) =>
+      req<{ ok: boolean }>(`/executions/${id}`, { method: "DELETE" }),
+  },
+  triggers: {
+    list: (issueId: string) => req<AgentTrigger[]>(`/triggers/issue/${issueId}`),
+    create: (data: Omit<AgentTrigger, "id" | "createdAt">) =>
+      req<AgentTrigger>("/triggers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    update: (id: string, patch: Partial<AgentTrigger>) =>
+      req<AgentTrigger>(`/triggers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      }),
+    delete: (id: string) =>
+      req<{ ok: boolean }>(`/triggers/${id}`, { method: "DELETE" }),
   },
   initStatus: () => req<{ initialized: boolean }>("/init-status"),
   init: (dir?: string) =>
