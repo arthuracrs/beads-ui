@@ -136,9 +136,26 @@ app.get("/api/issues/stats", async (_req, res) => {
 });
 // GET /api/issues/:id
 app.get("/api/issues/:id", async (req, res) => {
+    const id = req.params.id;
+    if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+        return res.status(400).json({ error: "Invalid issue id" });
+    }
+    try {
+        // `bd show --json` includes comments; `bd list --json` does not.
+        const raw = await bd(`show ${id} --json`);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            const issue = Array.isArray(parsed) ? parsed[0] : parsed;
+            if (issue)
+                return res.json(issue);
+        }
+    }
+    catch {
+        // fall through to JSONL fallback
+    }
     try {
         const issues = await listIssues();
-        const issue = issues.find((i) => i.id === req.params.id);
+        const issue = issues.find((i) => i.id === id);
         if (!issue)
             return res.status(404).json({ error: "Issue not found" });
         res.json(issue);
