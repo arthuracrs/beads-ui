@@ -279,9 +279,16 @@ app.get("/api/executions/:id/stream", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable nginx/proxy buffering
   res.flushHeaders();
 
-  const send = (payload: object) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  // Disable Nagle's algorithm so small SSE packets aren't batched
+  res.socket?.setNoDelay(true);
+
+  const send = (payload: object) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    (res as unknown as { flush?: () => void }).flush?.();
+  };
 
   // Replay existing output first
   if (execution.output) send({ type: "output", data: execution.output });
