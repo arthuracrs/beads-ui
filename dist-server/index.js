@@ -264,14 +264,9 @@ app.get("/api/graph", async (_req, res) => {
     }
 });
 // GET /api/init-status — check if bd is initialized
-app.get("/api/init-status", async (_req, res) => {
-    try {
-        await bd("status --json");
-        res.json({ initialized: true });
-    }
-    catch {
-        res.json({ initialized: false });
-    }
+app.get("/api/init-status", (_req, res) => {
+    const initialized = fs_1.default.existsSync(path_1.default.join(PROJECT_DIR, ".beads/issues.jsonl"));
+    res.json({ initialized });
 });
 // POST /api/init
 app.post("/api/init", async (req, res) => {
