@@ -8,7 +8,7 @@ import * as Execs from "./executions";
 import * as Runtimes from "./runtimes";
 
 const execAsync = promisify(exec);
-console.log("sucesso meu parceiro");
+
 const app = express();
 app.use(cors());
 app.use(express.json());
