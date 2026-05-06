@@ -35,21 +35,29 @@ function parseJson<T>(raw: string): T {
   return JSON.parse(raw);
 }
 
-function readIssues(): Record<string, unknown>[] {
-  const file = path.join(PROJECT_DIR, ".beads/issues.jsonl");
-  if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line))
-    .filter((r) => r._type === "issue");
+async function listIssues(): Promise<Record<string, unknown>[]> {
+  try {
+    const raw = await bd("list --json");
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    // Fallback for JSONL-mode workspaces if bd CLI is unavailable
+    const file = path.join(PROJECT_DIR, ".beads/issues.jsonl");
+    if (!fs.existsSync(file)) return [];
+    return fs.readFileSync(file, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((r) => r._type === "issue");
+  }
 }
 
 // GET /api/issues
-app.get("/api/issues", (req, res) => {
+app.get("/api/issues", async (req, res) => {
   try {
     const { status, type, priority, assignee, search } = req.query;
-    let issues = readIssues();
+    let issues = await listIssues();
     if (status) issues = issues.filter((i) => i.status === status);
     if (type) issues = issues.filter((i) => i.issue_type === type);
     if (priority !== undefined) issues = issues.filter((i) => String(i.priority) === String(priority));
@@ -91,9 +99,10 @@ app.get("/api/issues/stats", async (_req, res) => {
 });
 
 // GET /api/issues/:id
-app.get("/api/issues/:id", (req, res) => {
+app.get("/api/issues/:id", async (req, res) => {
   try {
-    const issue = readIssues().find((i) => i.id === req.params.id);
+    const issues = await listIssues();
+    const issue = issues.find((i) => i.id === req.params.id);
     if (!issue) return res.status(404).json({ error: "Issue not found" });
     res.json(issue);
   } catch (err: unknown) {
@@ -223,8 +232,9 @@ app.get("/api/graph", async (_req, res) => {
 });
 
 // GET /api/init-status — check if bd is initialized
+// Detects both JSONL (.beads/issues.jsonl) and Dolt-backed (.beads/embeddeddolt/…) workspaces
 app.get("/api/init-status", (_req, res) => {
-  const initialized = fs.existsSync(path.join(PROJECT_DIR, ".beads/issues.jsonl"));
+  const initialized = fs.existsSync(path.join(PROJECT_DIR, ".beads"));
   res.json({ initialized });
 });
 
