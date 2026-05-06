@@ -16,7 +16,7 @@
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build && tsc -p tsconfig.server.json",
-    "prepare": "npm run build",
+    "prepare": "echo 'Run npm run build to rebuild'",
     "preview": "vite preview"
   },
   "keywords": [],
