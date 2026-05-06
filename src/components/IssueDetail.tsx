@@ -294,7 +294,7 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
                         {c.author && <span>@{c.author}</span>}
                         <span>{new Date(c.created_at).toLocaleString()}</span>
                       </div>
-                      <p className="whitespace-pre-wrap text-sm text-[var(--text)]">{c.body}</p>
+                      <p className="whitespace-pre-wrap text-sm text-[var(--text)]">{c.text}</p>
                     </div>
                   ))}
                 </div>

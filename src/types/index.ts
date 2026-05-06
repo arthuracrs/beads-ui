@@ -30,7 +30,7 @@ export interface Dependency {
 
 export interface Comment {
   id: string;
-  body: string;
+  text: string;
   author?: string;
   created_at: string;
 }

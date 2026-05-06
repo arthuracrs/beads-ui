@@ -4,6 +4,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import os from "os";
+import fs from "fs";
 import * as Execs from "./executions";
 import * as Runtimes from "./runtimes";
 
@@ -33,23 +34,35 @@ function parseJson<T>(raw: string): T {
   return JSON.parse(raw);
 }
 
+function readIssues(): Record<string, unknown>[] {
+  const file = path.join(PROJECT_DIR, ".beads/issues.jsonl");
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .filter((r) => r._type === "issue");
+}
+
 // GET /api/issues
-app.get("/api/issues", async (req, res) => {
+app.get("/api/issues", (req, res) => {
   try {
-    const { status, type, priority, assignee, label, search } = req.query;
-    let args = "list --json";
-    if (status) args += ` --status ${status}`;
-    if (type) args += ` --type ${type}`;
-    if (priority !== undefined) args += ` --priority ${priority}`;
-    if (assignee) args += ` --assignee "${assignee}"`;
-    if (label) args += ` --label "${label}"`;
-    if (search) args += ` --search "${search}"`;
-    const raw = await bd(args);
-    const issues = raw ? parseJson(raw) : [];
+    const { status, type, priority, assignee, search } = req.query;
+    let issues = readIssues();
+    if (status) issues = issues.filter((i) => i.status === status);
+    if (type) issues = issues.filter((i) => i.issue_type === type);
+    if (priority !== undefined) issues = issues.filter((i) => String(i.priority) === String(priority));
+    if (assignee) issues = issues.filter((i) => i.assignee === assignee);
+    if (search) {
+      const q = (search as string).toLowerCase();
+      issues = issues.filter((i) =>
+        String(i.title ?? "").toLowerCase().includes(q) ||
+        String(i.description ?? "").toLowerCase().includes(q)
+      );
+    }
     res.json(issues);
   } catch (err: unknown) {
-    const e = err as { stderr?: string; message: string };
-    res.status(500).json({ error: e.stderr || e.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
@@ -77,17 +90,13 @@ app.get("/api/issues/stats", async (_req, res) => {
 });
 
 // GET /api/issues/:id
-app.get("/api/issues/:id", async (req, res) => {
+app.get("/api/issues/:id", (req, res) => {
   try {
-    const raw = await bd(`show ${req.params.id} --json`);
-    const parsed = parseJson<unknown>(raw);
-    // bd show returns an array; extract the first element
-    const issue = Array.isArray(parsed) ? parsed[0] : parsed;
+    const issue = readIssues().find((i) => i.id === req.params.id);
     if (!issue) return res.status(404).json({ error: "Issue not found" });
     res.json(issue);
   } catch (err: unknown) {
-    const e = err as { stderr?: string; message: string };
-    res.status(500).json({ error: e.stderr || e.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
