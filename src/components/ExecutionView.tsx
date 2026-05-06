@@ -52,8 +52,9 @@ export function ExecutionView({ executionId, onClose }: Props) {
     // Load execution metadata
     api.executions.list("").catch(() => null); // noop — we get exec data from SSE
 
-    // Open SSE stream
-    const es = new EventSource(`/api/executions/${executionId}/stream`);
+    // Bypass Vite proxy for SSE — the proxy buffers the response body, breaking streaming
+    const apiBase = import.meta.env.DEV ? "http://localhost:3001" : "";
+    const es = new EventSource(`${apiBase}/api/executions/${executionId}/stream`);
     esRef.current = es;
 
     es.onmessage = (e) => {
