@@ -138,9 +138,12 @@ function startExecution(issueId, command, triggeredBy, projectDir) {
         triggeredBy,
     };
     executions.set(id, exec);
+    // Stamp bd writes (e.g. comments) with an "agent" actor so they're
+    // distinguishable from human-authored comments posted via the UI.
+    const actor = triggeredBy === "manual" ? "agent" : `agent:${triggeredBy}`;
     const proc = (0, child_process_1.spawn)("sh", ["-c", command], {
         cwd: projectDir,
-        env: { ...process.env },
+        env: { ...process.env, BEADS_ACTOR: actor },
         stdio: ["ignore", "pipe", "pipe"],
     });
     processes.set(id, proc);
