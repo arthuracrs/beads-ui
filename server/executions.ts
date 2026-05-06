@@ -1,5 +1,81 @@
 import { spawn, ChildProcess } from "child_process";
 
+// ── stream-json parser ────────────────────────────────────────────────────────
+
+function fmtToolInput(name: string, input: Record<string, unknown>): string {
+  if (name === "Bash" && typeof input.command === "string") {
+    const cmd = input.command.slice(0, 300);
+    return `\`${cmd}${input.command.length > 300 ? "…" : ""}\``;
+  }
+  const s = JSON.stringify(input ?? {});
+  return s.length > 200 ? s.slice(0, 200) + "…" : s;
+}
+
+function makeStreamJsonParser(onText: (text: string) => void): (chunk: string) => void {
+  let buf = "";
+  // Deduplicate tool calls — --include-partial-messages fires multiple assistant events
+  const shownToolIds = new Set<string>();
+
+  function handle(ev: Record<string, unknown>): string {
+    // Streaming text tokens
+    if (ev.type === "stream_event") {
+      const delta = ((ev.event as Record<string, unknown>)?.delta) as Record<string, unknown> | undefined;
+      if (delta?.type === "text_delta") return (delta.text as string) ?? "";
+    }
+
+    // Assistant message — show any tool_use blocks not yet shown
+    if (ev.type === "assistant") {
+      const content = ((ev.message as Record<string, unknown>)?.content as Record<string, unknown>[]) ?? [];
+      return content
+        .filter((b) => b.type === "tool_use" && !shownToolIds.has(b.id as string))
+        .map((b) => {
+          shownToolIds.add(b.id as string);
+          return `\n\x1b[36m▶ ${b.name}\x1b[0m ${fmtToolInput(b.name as string, (b.input ?? {}) as Record<string, unknown>)}\n`;
+        })
+        .join("");
+    }
+
+    // User message — show tool results (truncated)
+    if (ev.type === "user") {
+      const content = ((ev.message as Record<string, unknown>)?.content as Record<string, unknown>[]) ?? [];
+      return content
+        .filter((b) => b.type === "tool_result")
+        .map((b) => {
+          const blocks = (Array.isArray(b.content) ? b.content : [b.content]) as Record<string, unknown>[];
+          const text = blocks.filter((c) => c?.type === "text").map((c) => c.text as string).join("").trim();
+          if (!text) return "";
+          const truncated = text.length > 500 ? text.slice(0, 500) + "\n\x1b[2m…(truncated)\x1b[0m" : text;
+          return `\x1b[2m${truncated}\x1b[0m\n`;
+        })
+        .join("");
+    }
+
+    // Final result summary
+    if (ev.type === "result") {
+      const cost = typeof ev.total_cost_usd === "number" ? ` · $${(ev.total_cost_usd as number).toFixed(4)}` : "";
+      return `\n\x1b[2m[done${cost}]\x1b[0m\n`;
+    }
+
+    return "";
+  }
+
+  return (chunk: string) => {
+    buf += chunk;
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const text = handle(JSON.parse(trimmed) as Record<string, unknown>);
+        if (text) onText(text);
+      } catch {
+        onText(trimmed + "\n");
+      }
+    }
+  };
+}
+
 export type ExecStatus = "running" | "completed" | "failed" | "cancelled";
 
 export interface AgentExecution {
@@ -70,16 +146,33 @@ export function startExecution(
   const proc = spawn("sh", ["-c", command], {
     cwd: projectDir,
     env: { ...process.env },
+    stdio: ["ignore", "pipe", "pipe"],
   });
   processes.set(id, proc);
 
-  const onData = (data: Buffer) => {
+  const isStreamJson = command.includes("--output-format stream-json");
+
+  let onData: (data: Buffer) => void;
+  if (isStreamJson) {
+    const parse = makeStreamJsonParser((text) => {
+      exec.output += text;
+      notify(id, text, false);
+    });
+    onData = (data: Buffer) => parse(data.toString());
+  } else {
+    onData = (data: Buffer) => {
+      const chunk = data.toString();
+      exec.output += chunk;
+      notify(id, chunk, false);
+    };
+  }
+  proc.stdout?.on("data", onData);
+  proc.stderr?.on("data", (data: Buffer) => {
+    // stderr is never stream-json; always pass through raw
     const chunk = data.toString();
     exec.output += chunk;
     notify(id, chunk, false);
-  };
-  proc.stdout?.on("data", onData);
-  proc.stderr?.on("data", onData);
+  });
 
   proc.on("close", (code) => {
     exec.exitCode = code ?? undefined;

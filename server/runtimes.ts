@@ -15,7 +15,7 @@ const BUILTINS: AgentRuntime[] = [
     id: "claude-code",
     name: "Claude Code",
     description: "Anthropic Claude Code CLI",
-    commandTemplate: `claude --dangerously-skip-permissions -p "{prompt}"`,
+    commandTemplate: `claude --dangerously-skip-permissions -p "{prompt}" --output-format stream-json --verbose --include-partial-messages`,
     builtin: true,
   },
   {
@@ -46,10 +46,6 @@ function loadCustom(): AgentRuntime[] {
   }
 }
 
-function saveCustom(runtimes: AgentRuntime[]) {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(runtimes, null, 2));
-}
 
 export function listRuntimes(): AgentRuntime[] {
   return [...BUILTINS, ...loadCustom()];
@@ -59,32 +55,3 @@ export function getRuntime(id: string): AgentRuntime | undefined {
   return listRuntimes().find((r) => r.id === id);
 }
 
-export function createRuntime(data: Omit<AgentRuntime, "id" | "builtin">): AgentRuntime {
-  const custom = loadCustom();
-  const runtime: AgentRuntime = {
-    ...data,
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-    builtin: false,
-  };
-  custom.push(runtime);
-  saveCustom(custom);
-  return runtime;
-}
-
-export function updateRuntime(id: string, patch: Partial<Omit<AgentRuntime, "id" | "builtin">>): AgentRuntime | undefined {
-  const custom = loadCustom();
-  const idx = custom.findIndex((r) => r.id === id);
-  if (idx === -1) return undefined; // can't update builtins
-  Object.assign(custom[idx], patch);
-  saveCustom(custom);
-  return custom[idx];
-}
-
-export function deleteRuntime(id: string): boolean {
-  const custom = loadCustom();
-  const idx = custom.findIndex((r) => r.id === id);
-  if (idx === -1) return false;
-  custom.splice(idx, 1);
-  saveCustom(custom);
-  return true;
-}

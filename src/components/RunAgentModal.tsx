@@ -27,13 +27,18 @@ function buildCommand(runtime: AgentRuntime, prompt: string, issue: Issue): stri
   return interpolate(runtime.commandTemplate, { prompt: resolvedPrompt });
 }
 
+function RuntimeIcon({ id }: { id: string }) {
+  if (id === "claude-code") return <span className="text-[var(--purple)]">◎</span>;
+  if (id === "cursor") return <span className="text-[var(--accent)]">⌥</span>;
+  return <span className="text-[var(--text-muted)]">▸</span>;
+}
+
 export function RunAgentModal({ issue, onClose, onStarted }: Props) {
   const [runtimes, setRuntimes] = useState<AgentRuntime[]>([]);
   const [runtimeId, setRuntimeId] = useState("claude-code");
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showAddRuntime, setShowAddRuntime] = useState(false);
 
   useEffect(() => {
     api.runtimes.list().then(setRuntimes).catch(() => {});
@@ -49,8 +54,7 @@ export function RunAgentModal({ issue, onClose, onStarted }: Props) {
     setLoading(true);
     setError("");
     try {
-      const command = buildCommand(runtime, prompt, issue);
-      const exec = await api.executions.start(issue.id, command);
+      const exec = await api.executions.start(issue.id, buildCommand(runtime, prompt, issue));
       onStarted(exec);
     } catch (err: unknown) {
       setError((err as Error).message);
@@ -84,30 +88,8 @@ export function RunAgentModal({ issue, onClose, onStarted }: Props) {
               >
                 <RuntimeIcon id={r.id} />
                 <span>{r.name}</span>
-                {!r.builtin && (
-                  <span
-                    className="ml-1 text-[var(--text-muted)] hover:text-[var(--red)] text-xs"
-                    title="Delete runtime"
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await api.runtimes.delete(r.id);
-                      const updated = await api.runtimes.list();
-                      setRuntimes(updated);
-                      if (runtimeId === r.id) setRuntimeId("claude-code");
-                    }}
-                  >
-                    ×
-                  </span>
-                )}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => setShowAddRuntime(true)}
-              className="rounded-lg border border-dashed border-[var(--border)] px-3 py-2 text-sm text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text)] transition-all"
-            >
-              + Add
-            </button>
           </div>
           {runtime && (
             <p className="mt-2 text-[10px] text-[var(--text-muted)]">
@@ -161,95 +143,7 @@ export function RunAgentModal({ issue, onClose, onStarted }: Props) {
             </button>
           </div>
         </form>
-
-        {showAddRuntime && (
-          <AddRuntimeForm
-            onClose={() => setShowAddRuntime(false)}
-            onAdded={(r) => {
-              setRuntimes((prev) => [...prev, r]);
-              setRuntimeId(r.id);
-              setShowAddRuntime(false);
-            }}
-          />
-        )}
       </div>
-    </div>
-  );
-}
-
-function RuntimeIcon({ id }: { id: string }) {
-  if (id === "claude-code") return <span className="text-[var(--purple)]">◎</span>;
-  if (id === "cursor") return <span className="text-[var(--accent)]">⌥</span>;
-  return <span className="text-[var(--text-muted)]">▸</span>;
-}
-
-function AddRuntimeForm({ onClose, onAdded }: { onClose: () => void; onAdded: (r: AgentRuntime) => void }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [commandTemplate, setCommandTemplate] = useState(`my-agent -p "{prompt}"`);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      const runtime = await api.runtimes.create({ name, description, commandTemplate });
-      onAdded(runtime);
-    } catch (err: unknown) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="mt-5 rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-4">
-      <h3 className="mb-3 text-sm font-medium text-[var(--text)]">Add Custom Runtime</h3>
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs text-[var(--text-muted)]">Name</label>
-            <input
-              autoFocus
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
-              placeholder="My Agent"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-[var(--text-muted)]">Description</label>
-            <input
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
-              placeholder="Optional"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs text-[var(--text-muted)]">
-            Command template — use <code className="font-mono bg-[var(--bg)] px-1 rounded">{"{prompt}"}</code> where the prompt goes
-          </label>
-          <input
-            className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 font-mono text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
-            placeholder={`my-agent -p "{prompt}"`}
-            value={commandTemplate}
-            onChange={(e) => setCommandTemplate(e.target.value)}
-            required
-          />
-        </div>
-        {error && <p className="text-xs text-[var(--red)]">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)]">Cancel</button>
-          <button type="submit" disabled={loading} className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-[var(--bg)] disabled:opacity-50">
-            {loading ? "Adding…" : "Add Runtime"}
-          </button>
-        </div>
-      </form>
     </div>
   );
 }

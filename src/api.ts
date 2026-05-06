@@ -58,20 +58,6 @@ export const api = {
   },
   runtimes: {
     list: () => req<AgentRuntime[]>("/runtimes"),
-    create: (data: Omit<AgentRuntime, "id" | "builtin">) =>
-      req<AgentRuntime>("/runtimes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, patch: Partial<Omit<AgentRuntime, "id" | "builtin">>) =>
-      req<AgentRuntime>(`/runtimes/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      }),
-    delete: (id: string) =>
-      req<{ ok: boolean }>(`/runtimes/${id}`, { method: "DELETE" }),
   },
   executions: {
     list: (issueId: string) => req<AgentExecution[]>(`/executions/issue/${issueId}`),
