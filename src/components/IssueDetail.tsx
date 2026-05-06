@@ -29,21 +29,30 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
   const [showCloseForm, setShowCloseForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const data = await api.issues.get(issueId);
       setIssue(data);
     } catch (err: unknown) {
-      setError((err as Error).message);
+      if (!silent) setError((err as Error).message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [issueId]);
 
   useEffect(() => {
     load();
+    // Silent background poll catches updates from agent runs / external CLI changes.
+    const interval = setInterval(() => {
+      if (document.hidden) return;
+      load({ silent: true });
+    }, 5000);
+    return () => clearInterval(interval);
   }, [load]);
 
   async function updateField(patch: Partial<Issue>) {

@@ -68,7 +68,8 @@ function parseJson(raw) {
 }
 async function listIssues() {
     try {
-        const raw = await bd("list --json");
+        // --all: include closed; -n 0: no result cap (default is 50)
+        const raw = await bd("list --all -n 0 --json");
         if (!raw)
             return [];
         const parsed = JSON.parse(raw);

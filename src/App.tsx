@@ -50,9 +50,12 @@ export default function App() {
   const [initialized, setInitialized] = useState<boolean | null>(null);
   const [initializing, setInitializing] = useState(false);
 
-  const loadIssues = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const loadIssues = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       let data: Issue[];
       if (view === "ready") {
@@ -63,11 +66,14 @@ export default function App() {
         data = await api.issues.list(p);
       }
       setIssues(Array.isArray(data) ? data : []);
+      if (silent) setError("");
     } catch (err: unknown) {
-      setError((err as Error).message);
-      setIssues([]);
+      if (!silent) {
+        setError((err as Error).message);
+        setIssues([]);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [view, search]);
 
@@ -89,6 +95,17 @@ export default function App() {
       loadIssues();
       loadStats();
     }
+  }, [initialized, loadIssues, loadStats]);
+
+  // Background poll so agent/CLI-driven state changes show up without a manual refresh.
+  useEffect(() => {
+    if (!initialized) return;
+    const interval = setInterval(() => {
+      if (document.hidden) return;
+      loadIssues({ silent: true });
+      loadStats();
+    }, 5000);
+    return () => clearInterval(interval);
   }, [initialized, loadIssues, loadStats]);
 
   async function handleInit() {
