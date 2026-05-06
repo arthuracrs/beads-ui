@@ -49,13 +49,14 @@ const execAsync = (0, util_1.promisify)(child_process_1.exec);
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
-const BD = process.env.BD_PATH || path_1.default.join(os_1.default.homedir(), ".local/bin/bd");
+const _bdConfigured = process.env.BD_PATH || path_1.default.join(os_1.default.homedir(), ".local/bin/bd");
+const BD = fs_1.default.existsSync(_bdConfigured) ? `"${_bdConfigured}"` : "bd";
 const PROJECT_DIR = process.env.PROJECT_DIR || process.cwd();
 function buildEnv() {
     return { ...process.env, PATH: process.env.PATH };
 }
 async function bd(args) {
-    const cmd = `"${BD}" ${args}`;
+    const cmd = `${BD} ${args}`;
     const { stdout } = await execAsync(cmd, {
         env: buildEnv(),
         cwd: PROJECT_DIR,
