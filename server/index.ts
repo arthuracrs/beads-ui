@@ -11,14 +11,10 @@ app.use(cors());
 app.use(express.json());
 
 const BD = process.env.BD_PATH || path.join(os.homedir(), ".local/bin/bd");
-const BEADS_DIR = process.env.BEADS_DIR || "";
-// PROJECT_DIR: the directory bd is run from (so it can discover .beads/)
 const PROJECT_DIR = process.env.PROJECT_DIR || process.cwd();
 
 function buildEnv() {
-  const env: NodeJS.ProcessEnv = { ...process.env, PATH: process.env.PATH };
-  if (BEADS_DIR) env.BEADS_DIR = BEADS_DIR;
-  return env;
+  return { ...process.env, PATH: process.env.PATH } as NodeJS.ProcessEnv;
 }
 
 async function bd(args: string): Promise<string> {
@@ -239,10 +235,15 @@ app.post("/api/init", async (req, res) => {
   }
 });
 
+// Serve built React app (production mode)
+const distPath = path.join(__dirname, "../dist");
+app.use(express.static(distPath));
+app.get("/*path", (_req, res) => {
+  res.sendFile(path.join(distPath, "index.html"));
+});
+
 const PORT = parseInt(process.env.PORT || "3001", 10);
 app.listen(PORT, () => {
-  console.log(`Beads API server running on http://localhost:${PORT}`);
-  console.log(`BD path: ${BD}`);
-  console.log(`Project dir: ${PROJECT_DIR}`);
-  if (BEADS_DIR) console.log(`BEADS_DIR: ${BEADS_DIR}`);
+  console.log(`Beads UI: http://localhost:${PORT}`);
+  console.log(`Project:  ${PROJECT_DIR}`);
 });

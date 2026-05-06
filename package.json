@@ -3,11 +3,20 @@
   "version": "1.0.0",
   "description": "Web interface for the Beads issue tracker",
   "main": "index.js",
+  "bin": {
+    "beads-ui": "bin/beads-ui.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "dist-server"
+  ],
   "scripts": {
     "dev": "concurrently -n client,server -c cyan,green \"vite\" \"tsx watch server/index.ts\"",
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
-    "build": "vite build",
+    "build": "vite build && tsc -p tsconfig.server.json",
+    "prepare": "npm run build",
     "preview": "vite preview"
   },
   "keywords": [],
