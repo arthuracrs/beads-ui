@@ -8,8 +8,8 @@ exports.getRuntime = getRuntime;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const os_1 = __importDefault(require("os"));
-// NOTE: {prompt} is shell-quoted by the client (RunAgentModal.buildCommand) for
-// every non-`custom` runtime, so templates must NOT wrap it in their own quotes.
+// NOTE: {prompt} is shell-quoted server-side, so templates must NOT wrap it
+// in their own quotes.
 const BUILTINS = [
     {
         id: "claude-code",
@@ -23,13 +23,6 @@ const BUILTINS = [
         name: "Cursor",
         description: "Cursor AI agent CLI (--force applies changes directly)",
         commandTemplate: `agent -p --force {prompt}`,
-        builtin: true,
-    },
-    {
-        id: "custom",
-        name: "Custom",
-        description: "Write the full command yourself — {prompt} is passed through as-is",
-        commandTemplate: `{prompt}`,
         builtin: true,
     },
 ];

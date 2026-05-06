@@ -324,15 +324,61 @@ app.get("/api/runtimes", (_req, res) => {
 app.get("/api/executions/issue/:issueId", (req, res) => {
     res.json(Execs.getExecutionsForIssue(req.params.issueId));
 });
+// POSIX shell-quote: wrap in single quotes and escape any embedded single quote.
+function shQuote(s) {
+    return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+function interpolate(template, vars) {
+    return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+}
 // POST /api/executions
-app.post("/api/executions", (req, res) => {
-    const { issueId, command } = req.body;
-    if (!issueId || !command) {
-        res.status(400).json({ error: "issueId and command are required" });
+app.post("/api/executions", async (req, res) => {
+    const { issueId, runtimeId, prompt } = req.body;
+    if (!issueId || !runtimeId || !prompt) {
+        res.status(400).json({ error: "issueId, runtimeId, and prompt are required" });
         return;
     }
-    const execution = Execs.startExecution(issueId, command, "manual", PROJECT_DIR);
-    res.json(execution);
+    if (!/^[a-zA-Z0-9_-]+$/.test(issueId)) {
+        res.status(400).json({ error: "Invalid issue id" });
+        return;
+    }
+    const runtime = Runtimes.getRuntime(runtimeId);
+    if (!runtime) {
+        res.status(400).json({ error: `Unknown runtime: ${runtimeId}` });
+        return;
+    }
+    try {
+        // Pull issue fields for {var} interpolation, then prepend `bd show` output
+        // so the agent always has full issue context (description + comments + deps).
+        const issues = await listIssues();
+        const issue = issues.find((i) => i.id === issueId);
+        const vars = {
+            id: issueId,
+            title: String(issue?.title ?? ""),
+            description: String(issue?.description ?? ""),
+            status: String(issue?.status ?? ""),
+            priority: String(issue?.priority ?? ""),
+            type: String(issue?.issue_type ?? ""),
+        };
+        const resolvedPrompt = interpolate(prompt, vars);
+        let context = "";
+        try {
+            context = await bd(`show ${issueId}`);
+        }
+        catch {
+            // If bd show fails, run anyway with just the user prompt.
+        }
+        const finalPrompt = context
+            ? `Issue context (output of \`bd show ${issueId}\`):\n\n${context}\n\n---\n\n${resolvedPrompt}`
+            : resolvedPrompt;
+        const command = interpolate(runtime.commandTemplate, { prompt: shQuote(finalPrompt) });
+        const execution = Execs.startExecution(issueId, command, "manual", PROJECT_DIR);
+        res.json(execution);
+    }
+    catch (err) {
+        const e = err;
+        res.status(500).json({ error: e.stderr || e.message });
+    }
 });
 // DELETE /api/executions/:id  (cancel)
 app.delete("/api/executions/:id", (req, res) => {
