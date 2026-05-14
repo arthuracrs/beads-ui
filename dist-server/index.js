@@ -1,37 +1,4 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -43,55 +10,121 @@ const util_1 = require("util");
 const path_1 = __importDefault(require("path"));
 const os_1 = __importDefault(require("os"));
 const fs_1 = __importDefault(require("fs"));
-const Execs = __importStar(require("./executions"));
-const Runtimes = __importStar(require("./runtimes"));
+const executions_1 = require("./executions");
+const runtimes_1 = require("./runtimes");
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
+// ── BdClient ──────────────────────────────────────────────────────────────────
+class BdClient {
+    constructor() {
+        const configured = process.env.BD_PATH || path_1.default.join(os_1.default.homedir(), ".local/bin/bd");
+        this.bin = fs_1.default.existsSync(configured) ? `"${configured}"` : "bd";
+        this.projectDir = process.env.PROJECT_DIR || process.cwd();
+    }
+    buildEnv() {
+        return { ...process.env, PATH: process.env.PATH };
+    }
+    async run(args) {
+        const { stdout } = await execAsync(`${this.bin} ${args}`, {
+            env: this.buildEnv(),
+            cwd: this.projectDir,
+        });
+        return stdout.trim();
+    }
+    async listIssues() {
+        try {
+            const raw = await this.run("list --all -n 0 --json");
+            if (!raw)
+                return [];
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        }
+        catch {
+            const file = path_1.default.join(this.projectDir, ".beads/issues.jsonl");
+            if (!fs_1.default.existsSync(file))
+                return [];
+            return fs_1.default.readFileSync(file, "utf8")
+                .split("\n")
+                .filter(Boolean)
+                .map((line) => JSON.parse(line))
+                .filter((r) => r._type === "issue");
+        }
+    }
+    isInitialized() {
+        return fs_1.default.existsSync(path_1.default.join(this.projectDir, ".beads"));
+    }
+    async init(dir) {
+        const cwd = dir || this.projectDir;
+        const { stdout } = await execAsync(`${this.bin} init`, {
+            env: this.buildEnv(),
+            cwd,
+        });
+        return { ok: true, output: stdout };
+    }
+    static parseJson(raw) {
+        return JSON.parse(raw);
+    }
+    static unwrap(parsed) {
+        return (Array.isArray(parsed) ? parsed[0] : parsed);
+    }
+    static shQuote(s) {
+        return "'" + s.replace(/'/g, "'\\''") + "'";
+    }
+    static interpolate(template, vars) {
+        return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+    }
+}
+// ── MCP config bootstrap ──────────────────────────────────────────────────────
+function mcpServerPath() {
+    // Production: compiled mcp-session.js lands in dist-server/ alongside this file
+    const sameDir = path_1.default.join(__dirname, "mcp-session.js");
+    if (fs_1.default.existsSync(sameDir))
+        return sameDir;
+    // Dev (tsx runner): __dirname = server/, dist-server is one level up
+    const distDir = path_1.default.join(__dirname, "..", "dist-server", "mcp-session.js");
+    if (fs_1.default.existsSync(distDir))
+        return distDir;
+    // TypeScript source fallback (tsx from node_modules)
+    return path_1.default.join(__dirname, "mcp-session.ts");
+}
+function ensureMcpConfig(projectDir) {
+    const mcpJsonPath = path_1.default.join(projectDir, ".mcp.json");
+    let config = {};
+    try {
+        if (fs_1.default.existsSync(mcpJsonPath)) {
+            config = JSON.parse(fs_1.default.readFileSync(mcpJsonPath, "utf-8"));
+        }
+    }
+    catch {
+        // start fresh if file is corrupt
+    }
+    if (!config.mcpServers)
+        config.mcpServers = {};
+    const servers = config.mcpServers;
+    const serverPath = mcpServerPath();
+    const isTs = serverPath.endsWith(".ts");
+    const command = isTs
+        ? path_1.default.join(__dirname, "..", "node_modules", ".bin", "tsx")
+        : process.execPath;
+    servers["beads-session"] = { command, args: [serverPath] };
+    try {
+        fs_1.default.writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
+        console.log(`beads-session MCP registered in ${mcpJsonPath}`);
+    }
+    catch (err) {
+        console.warn(`Warning: could not write .mcp.json: ${err.message}`);
+    }
+}
+// ── App setup ─────────────────────────────────────────────────────────────────
+const bd = new BdClient();
+ensureMcpConfig(bd.projectDir);
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
-const _bdConfigured = process.env.BD_PATH || path_1.default.join(os_1.default.homedir(), ".local/bin/bd");
-const BD = fs_1.default.existsSync(_bdConfigured) ? `"${_bdConfigured}"` : "bd";
-const PROJECT_DIR = process.env.PROJECT_DIR || process.cwd();
-function buildEnv() {
-    return { ...process.env, PATH: process.env.PATH };
-}
-async function bd(args) {
-    const cmd = `${BD} ${args}`;
-    const { stdout } = await execAsync(cmd, {
-        env: buildEnv(),
-        cwd: PROJECT_DIR,
-    });
-    return stdout.trim();
-}
-function parseJson(raw) {
-    return JSON.parse(raw);
-}
-async function listIssues() {
-    try {
-        // --all: include closed; -n 0: no result cap (default is 50)
-        const raw = await bd("list --all -n 0 --json");
-        if (!raw)
-            return [];
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-    }
-    catch {
-        // Fallback for JSONL-mode workspaces if bd CLI is unavailable
-        const file = path_1.default.join(PROJECT_DIR, ".beads/issues.jsonl");
-        if (!fs_1.default.existsSync(file))
-            return [];
-        return fs_1.default.readFileSync(file, "utf8")
-            .split("\n")
-            .filter(Boolean)
-            .map((line) => JSON.parse(line))
-            .filter((r) => r._type === "issue");
-    }
-}
 // GET /api/issues
 app.get("/api/issues", async (req, res) => {
     try {
         const { status, type, priority, assignee, search } = req.query;
-        let issues = await listIssues();
+        let issues = await bd.listIssues();
         if (status)
             issues = issues.filter((i) => i.status === status);
         if (type)
@@ -114,8 +147,8 @@ app.get("/api/issues", async (req, res) => {
 // GET /api/issues/ready
 app.get("/api/issues/ready", async (_req, res) => {
     try {
-        const raw = await bd("ready --json");
-        const issues = raw ? parseJson(raw) : [];
+        const raw = await bd.run("ready --json");
+        const issues = raw ? BdClient.parseJson(raw) : [];
         res.json(issues);
     }
     catch (err) {
@@ -126,8 +159,8 @@ app.get("/api/issues/ready", async (_req, res) => {
 // GET /api/issues/stats
 app.get("/api/issues/stats", async (_req, res) => {
     try {
-        const raw = await bd("status --json");
-        res.json(raw ? parseJson(raw) : {});
+        const raw = await bd.run("status --json");
+        res.json(raw ? BdClient.parseJson(raw) : {});
     }
     catch (err) {
         const e = err;
@@ -141,8 +174,7 @@ app.get("/api/issues/:id", async (req, res) => {
         return res.status(400).json({ error: "Invalid issue id" });
     }
     try {
-        // `bd show --json` includes comments; `bd list --json` does not.
-        const raw = await bd(`show ${id} --json`);
+        const raw = await bd.run(`show ${id} --json`);
         if (raw) {
             const parsed = JSON.parse(raw);
             const issue = Array.isArray(parsed) ? parsed[0] : parsed;
@@ -151,10 +183,10 @@ app.get("/api/issues/:id", async (req, res) => {
         }
     }
     catch {
-        // fall through to JSONL fallback
+        // fall through to list fallback
     }
     try {
-        const issues = await listIssues();
+        const issues = await bd.listIssues();
         const issue = issues.find((i) => i.id === id);
         if (!issue)
             return res.status(404).json({ error: "Issue not found" });
@@ -179,17 +211,14 @@ app.post("/api/issues", async (req, res) => {
             args += ` --assignee "${assignee}"`;
         if (label)
             args += ` --label "${label}"`;
-        const raw = await bd(args);
-        res.json(parseJson(raw));
+        const raw = await bd.run(args);
+        res.json(BdClient.parseJson(raw));
     }
     catch (err) {
         const e = err;
         res.status(500).json({ error: e.stderr || e.message });
     }
 });
-function unwrap(parsed) {
-    return (Array.isArray(parsed) ? parsed[0] : parsed);
-}
 // PATCH /api/issues/:id
 app.patch("/api/issues/:id", async (req, res) => {
     try {
@@ -203,8 +232,8 @@ app.patch("/api/issues/:id", async (req, res) => {
             args += ` --assignee "${assignee}"`;
         if (title)
             args += ` --title "${title.replace(/"/g, '\\"')}"`;
-        const raw = await bd(args);
-        res.json(unwrap(parseJson(raw)));
+        const raw = await bd.run(args);
+        res.json(BdClient.unwrap(BdClient.parseJson(raw)));
     }
     catch (err) {
         const e = err;
@@ -214,8 +243,8 @@ app.patch("/api/issues/:id", async (req, res) => {
 // POST /api/issues/:id/claim
 app.post("/api/issues/:id/claim", async (req, res) => {
     try {
-        const raw = await bd(`update ${req.params.id} --claim --json`);
-        res.json(unwrap(parseJson(raw)));
+        const raw = await bd.run(`update ${req.params.id} --claim --json`);
+        res.json(BdClient.unwrap(BdClient.parseJson(raw)));
     }
     catch (err) {
         const e = err;
@@ -227,8 +256,8 @@ app.post("/api/issues/:id/close", async (req, res) => {
     try {
         const { reason } = req.body;
         const r = reason ? `--reason "${reason.replace(/"/g, '\\"')}"` : "";
-        const raw = await bd(`close ${req.params.id} ${r} --json`);
-        res.json(unwrap(parseJson(raw)));
+        const raw = await bd.run(`close ${req.params.id} ${r} --json`);
+        res.json(BdClient.unwrap(BdClient.parseJson(raw)));
     }
     catch (err) {
         const e = err;
@@ -238,8 +267,8 @@ app.post("/api/issues/:id/close", async (req, res) => {
 // POST /api/issues/:id/reopen
 app.post("/api/issues/:id/reopen", async (req, res) => {
     try {
-        const raw = await bd(`reopen ${req.params.id} --json`);
-        res.json(unwrap(parseJson(raw)));
+        const raw = await bd.run(`reopen ${req.params.id} --json`);
+        res.json(BdClient.unwrap(BdClient.parseJson(raw)));
     }
     catch (err) {
         const e = err;
@@ -250,8 +279,8 @@ app.post("/api/issues/:id/reopen", async (req, res) => {
 app.post("/api/issues/:id/comment", async (req, res) => {
     try {
         const { body } = req.body;
-        const raw = await bd(`comment ${req.params.id} "${body.replace(/"/g, '\\"')}" --json`);
-        res.json(raw ? parseJson(raw) : { ok: true });
+        const raw = await bd.run(`comment ${req.params.id} "${body.replace(/"/g, '\\"')}" --json`);
+        res.json(raw ? BdClient.parseJson(raw) : { ok: true });
     }
     catch (err) {
         const e = err;
@@ -261,8 +290,8 @@ app.post("/api/issues/:id/comment", async (req, res) => {
 // GET /api/issues/:id/deps
 app.get("/api/issues/:id/deps", async (req, res) => {
     try {
-        const raw = await bd(`dep list ${req.params.id} --json`);
-        res.json(raw ? parseJson(raw) : []);
+        const raw = await bd.run(`dep list ${req.params.id} --json`);
+        res.json(raw ? BdClient.parseJson(raw) : []);
     }
     catch (err) {
         const e = err;
@@ -274,8 +303,8 @@ app.post("/api/deps", async (req, res) => {
     try {
         const { child, parent, type } = req.body;
         const t = type ? `--type ${type}` : "";
-        const raw = await bd(`dep add ${child} ${parent} ${t} --json`);
-        res.json(raw ? parseJson(raw) : { ok: true });
+        const raw = await bd.run(`dep add ${child} ${parent} ${t} --json`);
+        res.json(raw ? BdClient.parseJson(raw) : { ok: true });
     }
     catch (err) {
         const e = err;
@@ -285,30 +314,24 @@ app.post("/api/deps", async (req, res) => {
 // GET /api/graph
 app.get("/api/graph", async (_req, res) => {
     try {
-        const raw = await bd("graph --json");
-        res.json(raw ? parseJson(raw) : {});
+        const raw = await bd.run("graph --json");
+        res.json(raw ? BdClient.parseJson(raw) : {});
     }
     catch (err) {
         const e = err;
         res.status(500).json({ error: e.stderr || e.message });
     }
 });
-// GET /api/init-status — check if bd is initialized
-// Detects both JSONL (.beads/issues.jsonl) and Dolt-backed (.beads/embeddeddolt/…) workspaces
+// GET /api/init-status
 app.get("/api/init-status", (_req, res) => {
-    const initialized = fs_1.default.existsSync(path_1.default.join(PROJECT_DIR, ".beads"));
-    res.json({ initialized });
+    res.json({ initialized: bd.isInitialized() });
 });
 // POST /api/init
 app.post("/api/init", async (req, res) => {
     try {
         const { dir } = req.body;
-        const cwd = dir || PROJECT_DIR;
-        const { stdout } = await execAsync(`"${BD}" init`, {
-            env: buildEnv(),
-            cwd,
-        });
-        res.json({ ok: true, output: stdout });
+        const result = await bd.init(dir);
+        res.json(result);
     }
     catch (err) {
         const e = err;
@@ -317,20 +340,13 @@ app.post("/api/init", async (req, res) => {
 });
 // ── Agent Runtimes ────────────────────────────────────────────────────────────
 app.get("/api/runtimes", (_req, res) => {
-    res.json(Runtimes.listRuntimes());
+    res.json(runtimes_1.runtimeRegistry.list());
 });
 // ── Agent Executions ──────────────────────────────────────────────────────────
 // GET /api/executions/issue/:issueId
 app.get("/api/executions/issue/:issueId", (req, res) => {
-    res.json(Execs.getExecutionsForIssue(req.params.issueId));
+    res.json(executions_1.executionManager.getForIssue(req.params.issueId));
 });
-// POSIX shell-quote: wrap in single quotes and escape any embedded single quote.
-function shQuote(s) {
-    return "'" + s.replace(/'/g, "'\\''") + "'";
-}
-function interpolate(template, vars) {
-    return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
-}
 // POST /api/executions
 app.post("/api/executions", async (req, res) => {
     const { issueId, runtimeId, prompt } = req.body;
@@ -342,15 +358,13 @@ app.post("/api/executions", async (req, res) => {
         res.status(400).json({ error: "Invalid issue id" });
         return;
     }
-    const runtime = Runtimes.getRuntime(runtimeId);
+    const runtime = runtimes_1.runtimeRegistry.get(runtimeId);
     if (!runtime) {
         res.status(400).json({ error: `Unknown runtime: ${runtimeId}` });
         return;
     }
     try {
-        // Pull issue fields for {var} interpolation, then prepend `bd show` output
-        // so the agent always has full issue context (description + comments + deps).
-        const issues = await listIssues();
+        const issues = await bd.listIssues();
         const issue = issues.find((i) => i.id === issueId);
         const vars = {
             id: issueId,
@@ -360,20 +374,30 @@ app.post("/api/executions", async (req, res) => {
             priority: String(issue?.priority ?? ""),
             type: String(issue?.issue_type ?? ""),
         };
-        const resolvedPrompt = interpolate(prompt, vars);
+        const resolvedPrompt = BdClient.interpolate(prompt, vars);
         let context = "";
         try {
-            context = await bd(`show ${issueId}`);
+            context = await bd.run(`show ${issueId}`);
         }
         catch {
             // If bd show fails, run anyway with just the user prompt.
         }
-        const finalPrompt = context
+        const basePrompt = context
             ? `Issue context (output of \`bd show ${issueId}\`):\n\n${context}\n\n---\n\n${resolvedPrompt}`
             : resolvedPrompt;
-        const command = interpolate(runtime.commandTemplate, { prompt: shQuote(finalPrompt) });
-        const execution = Execs.startExecution(issueId, command, "manual", PROJECT_DIR);
-        res.json(execution);
+        const finalPrompt = runtime.kind === "tmux"
+            ? `${basePrompt}\n\n---\n\nWhen you have fully completed this task, call the \`end_session\` MCP tool to close this session and mark the work as done.`
+            : basePrompt;
+        const quotedPrompt = BdClient.shQuote(finalPrompt);
+        const command = BdClient.interpolate(runtime.commandTemplate, { prompt: quotedPrompt });
+        if (runtime.kind === "tmux") {
+            const execution = executions_1.executionManager.startTmux(issueId, command, "manual", bd.projectDir);
+            res.json(execution);
+        }
+        else {
+            const execution = executions_1.executionManager.start(issueId, command, "manual", bd.projectDir);
+            res.json(execution);
+        }
     }
     catch (err) {
         const e = err;
@@ -382,12 +406,13 @@ app.post("/api/executions", async (req, res) => {
 });
 // DELETE /api/executions/:id  (cancel)
 app.delete("/api/executions/:id", (req, res) => {
-    const ok = Execs.cancelExecution(req.params.id);
+    console.log(`Received request to cancel execution ${req.params.id}`);
+    const ok = executions_1.executionManager.cancel(req.params.id);
     res.json({ ok });
 });
 // GET /api/executions/:id/stream  (SSE — live output)
 app.get("/api/executions/:id/stream", (req, res) => {
-    const execution = Execs.getExecution(req.params.id);
+    const execution = executions_1.executionManager.get(req.params.id);
     if (!execution) {
         res.status(404).json({ error: "Execution not found" });
         return;
@@ -395,24 +420,21 @@ app.get("/api/executions/:id/stream", (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no"); // disable nginx/proxy buffering
+    res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
-    // Disable Nagle's algorithm so small SSE packets aren't batched
     res.socket?.setNoDelay(true);
     const send = (payload) => {
         res.write(`data: ${JSON.stringify(payload)}\n\n`);
         res.flush?.();
     };
-    // Replay existing output first
     if (execution.output)
         send({ type: "output", data: execution.output });
-    // If already finished, close immediately
     if (execution.status !== "running") {
         send({ type: "done", status: execution.status, exitCode: execution.exitCode });
         res.end();
         return;
     }
-    const unsub = Execs.subscribeToExecution(req.params.id, (chunk, done, status, exitCode) => {
+    const unsub = executions_1.executionManager.subscribe(req.params.id, (chunk, done, status, exitCode) => {
         if (chunk)
             send({ type: "output", data: chunk });
         if (done) {
@@ -422,19 +444,98 @@ app.get("/api/executions/:id/stream", (req, res) => {
     });
     req.on("close", unsub);
 });
+// ── Tmux sessions ─────────────────────────────────────────────────────────────
+// GET /api/tmux/sessions — all tmux executions (global sessions screen)
+app.get("/api/tmux/sessions", (_req, res) => {
+    res.json(executions_1.executionManager.getAllTmux());
+});
+// POST /api/tmux/sessions/:id/complete — agent signals task done (called by end_session MCP tool)
+app.post("/api/tmux/sessions/:id/complete", (req, res) => {
+    const ok = executions_1.executionManager.completeTmux(req.params.id);
+    res.json({ ok });
+});
+// DELETE /api/tmux/sessions/:id — user kills a session from the UI
+app.delete("/api/tmux/sessions/:id", (req, res) => {
+    const ok = executions_1.executionManager.cancel(req.params.id);
+    res.json({ ok });
+});
+// GET /api/executions/:id/pane  (SSE — polled tmux capture-pane output)
+app.get("/api/executions/:id/pane", async (req, res) => {
+    const execution = executions_1.executionManager.get(req.params.id);
+    if (!execution || !execution.tmuxSession) {
+        res.status(404).json({ error: "Tmux execution not found" });
+        return;
+    }
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    res.socket?.setNoDelay(true);
+    const send = (payload) => {
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        res.flush?.();
+    };
+    const sessionName = execution.tmuxSession;
+    // Send initial capture immediately
+    const initial = await executions_1.tmuxManager.capture(sessionName);
+    if (initial)
+        send({ type: "pane", data: initial });
+    if (execution.status !== "running") {
+        send({ type: "done", status: execution.status });
+        res.end();
+        return;
+    }
+    const interval = setInterval(async () => {
+        const exec = executions_1.executionManager.get(req.params.id);
+        const paneData = await executions_1.tmuxManager.capture(sessionName);
+        if (paneData)
+            send({ type: "pane", data: paneData });
+        if (exec.status !== "running") {
+            send({ type: "done", status: exec.status });
+            clearInterval(interval);
+            res.end();
+        }
+    }, 500);
+    req.on("close", () => clearInterval(interval));
+});
+// POST /api/executions/:id/input — send text to a running tmux session
+app.post("/api/executions/:id/input", async (req, res) => {
+    const execution = executions_1.executionManager.get(req.params.id);
+    if (!execution || !execution.tmuxSession) {
+        res.status(404).json({ error: "Tmux execution not found" });
+        return;
+    }
+    const { text } = req.body;
+    if (typeof text !== "string" || text.length === 0) {
+        res.status(400).json({ error: "text is required" });
+        return;
+    }
+    if (text.length > 16384) {
+        res.status(400).json({ error: "text too long (max 16384 bytes)" });
+        return;
+    }
+    try {
+        await executions_1.tmuxManager.sendKeys(execution.tmuxSession, text);
+        res.json({ ok: true });
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 // ── Triggers ──────────────────────────────────────────────────────────────────
 // GET /api/triggers/issue/:issueId
 app.get("/api/triggers/issue/:issueId", (req, res) => {
-    res.json(Execs.getTriggersForIssue(req.params.issueId));
+    res.json(executions_1.triggerStore.getForIssue(req.params.issueId));
 });
 // POST /api/triggers
 app.post("/api/triggers", (req, res) => {
-    const trigger = Execs.createTrigger(req.body);
+    const trigger = executions_1.triggerStore.create(req.body);
     res.json(trigger);
 });
 // PATCH /api/triggers/:id
 app.patch("/api/triggers/:id", (req, res) => {
-    const trigger = Execs.updateTrigger(req.params.id, req.body);
+    const trigger = executions_1.triggerStore.update(req.params.id, req.body);
     if (!trigger) {
         res.status(404).json({ error: "Trigger not found" });
         return;
@@ -443,11 +544,10 @@ app.patch("/api/triggers/:id", (req, res) => {
 });
 // DELETE /api/triggers/:id
 app.delete("/api/triggers/:id", (req, res) => {
-    Execs.deleteTrigger(req.params.id);
+    executions_1.triggerStore.delete(req.params.id);
     res.json({ ok: true });
 });
 // ── Static (must be last) ─────────────────────────────────────────────────────
-// Serve built React app (production mode)
 const distPath = path_1.default.join(__dirname, "../dist");
 app.use(express_1.default.static(distPath));
 app.get("/*path", (_req, res) => {
@@ -456,5 +556,5 @@ app.get("/*path", (_req, res) => {
 const PORT = parseInt(process.env.PORT || "3001", 10);
 app.listen(PORT, () => {
     console.log(`Beads UI: http://localhost:${PORT}`);
-    console.log(`Project:  ${PROJECT_DIR}`);
+    console.log(`Project:  ${bd.projectDir}`);
 });

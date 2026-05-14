@@ -1,68 +1,38 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.startExecution = startExecution;
-exports.cancelExecution = cancelExecution;
-exports.getExecutionsForIssue = getExecutionsForIssue;
-exports.getExecution = getExecution;
-exports.subscribeToExecution = subscribeToExecution;
-exports.getTriggersForIssue = getTriggersForIssue;
-exports.createTrigger = createTrigger;
-exports.updateTrigger = updateTrigger;
-exports.deleteTrigger = deleteTrigger;
+exports.executionManager = exports.triggerStore = exports.ExecutionManager = exports.tmuxManager = exports.TmuxManager = exports.TriggerStore = void 0;
 const child_process_1 = require("child_process");
-// ── stream-json parser ────────────────────────────────────────────────────────
-function fmtToolInput(name, input) {
-    if (name === "Bash" && typeof input.command === "string") {
-        const cmd = input.command.slice(0, 300);
-        return `\`${cmd}${input.command.length > 300 ? "…" : ""}\``;
+const util_1 = require("util");
+const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
+// ── Stream JSON parser ────────────────────────────────────────────────────────
+class StreamJsonParser {
+    constructor(onText) {
+        this.onText = onText;
+        this.buf = "";
+        this.toolBlocks = new Map();
     }
-    const s = JSON.stringify(input ?? {});
-    return s.length > 200 ? s.slice(0, 200) + "…" : s;
-}
-function makeStreamJsonParser(onText) {
-    let buf = "";
-    // Track tool_use blocks being assembled via stream_events (index → block state)
-    const toolBlocks = new Map();
-    function handleStreamEvent(event) {
-        const type = event.type;
-        if (type === "content_block_start") {
-            const block = event.content_block;
-            if (block?.type === "tool_use") {
-                toolBlocks.set(event.index, { name: block.name, inputJson: "" });
+    process(chunk) {
+        this.buf += chunk;
+        const lines = this.buf.split("\n");
+        this.buf = lines.pop() ?? "";
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed)
+                continue;
+            try {
+                const text = this.handle(JSON.parse(trimmed));
+                if (text)
+                    this.onText(text);
             }
-            return "";
-        }
-        if (type === "content_block_delta") {
-            const delta = event.delta;
-            if (delta?.type === "text_delta")
-                return delta.text ?? "";
-            if (delta?.type === "input_json_delta") {
-                const block = toolBlocks.get(event.index);
-                if (block)
-                    block.inputJson += delta.partial_json ?? "";
+            catch {
+                this.onText(trimmed + "\n");
             }
-            return "";
         }
-        if (type === "content_block_stop") {
-            const block = toolBlocks.get(event.index);
-            if (block) {
-                toolBlocks.delete(event.index);
-                let input = {};
-                try {
-                    input = JSON.parse(block.inputJson || "{}");
-                }
-                catch { /* partial input */ }
-                return `\n\x1b[36m▶ ${block.name}\x1b[0m ${fmtToolInput(block.name, input)}\n`;
-            }
-            return "";
-        }
-        return "";
     }
-    function handle(ev) {
+    handle(ev) {
         if (ev.type === "stream_event") {
-            return handleStreamEvent(ev.event ?? {});
+            return this.handleStreamEvent(ev.event ?? {});
         }
-        // User message — show tool results (truncated)
         if (ev.type === "user") {
             const content = ev.message?.content ?? [];
             return content
@@ -77,161 +47,387 @@ function makeStreamJsonParser(onText) {
             })
                 .join("");
         }
-        // Final result summary
         if (ev.type === "result") {
             const cost = typeof ev.total_cost_usd === "number" ? ` · $${ev.total_cost_usd.toFixed(4)}` : "";
             return `\n\x1b[2m[done${cost}]\x1b[0m\n`;
         }
         return "";
     }
-    return (chunk) => {
-        buf += chunk;
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed)
-                continue;
-            try {
-                const text = handle(JSON.parse(trimmed));
-                if (text)
-                    onText(text);
+    handleStreamEvent(event) {
+        const type = event.type;
+        if (type === "content_block_start") {
+            const block = event.content_block;
+            if (block?.type === "tool_use") {
+                this.toolBlocks.set(event.index, { name: block.name, inputJson: "" });
             }
-            catch {
-                onText(trimmed + "\n");
+            return "";
+        }
+        if (type === "content_block_delta") {
+            const delta = event.delta;
+            if (delta?.type === "text_delta")
+                return delta.text ?? "";
+            if (delta?.type === "input_json_delta") {
+                const block = this.toolBlocks.get(event.index);
+                if (block)
+                    block.inputJson += delta.partial_json ?? "";
+            }
+            return "";
+        }
+        if (type === "content_block_stop") {
+            const block = this.toolBlocks.get(event.index);
+            if (block) {
+                this.toolBlocks.delete(event.index);
+                let input = {};
+                try {
+                    input = JSON.parse(block.inputJson || "{}");
+                }
+                catch { /* partial input */ }
+                return `\n\x1b[36m▶ ${block.name}\x1b[0m ${StreamJsonParser.fmtToolInput(block.name, input)}\n`;
+            }
+            return "";
+        }
+        return "";
+    }
+    static fmtToolInput(name, input) {
+        if (name === "Bash" && typeof input.command === "string") {
+            const cmd = input.command.slice(0, 300);
+            return `\`${cmd}${input.command.length > 300 ? "…" : ""}\``;
+        }
+        const s = JSON.stringify(input ?? {});
+        return s.length > 200 ? s.slice(0, 200) + "…" : s;
+    }
+}
+// ── Trigger store ─────────────────────────────────────────────────────────────
+class TriggerStore {
+    constructor() {
+        this.triggers = new Map();
+    }
+    getForIssue(issueId) {
+        return Array.from(this.triggers.values()).filter((t) => t.issueId === issueId);
+    }
+    getMatching(issueId, condition) {
+        return Array.from(this.triggers.values()).filter((t) => t.issueId === issueId && t.enabled && t.condition === condition);
+    }
+    create(data) {
+        const trigger = { ...data, id: TriggerStore.genId(), createdAt: new Date().toISOString() };
+        this.triggers.set(trigger.id, trigger);
+        return trigger;
+    }
+    update(id, patch) {
+        const t = this.triggers.get(id);
+        if (!t)
+            return undefined;
+        Object.assign(t, patch);
+        return t;
+    }
+    delete(id) {
+        return this.triggers.delete(id);
+    }
+    static genId() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    }
+}
+exports.TriggerStore = TriggerStore;
+// ── Tmux manager ─────────────────────────────────────────────────────────────
+class TmuxManager {
+    assertSafe(name) {
+        if (!TmuxManager.VALID_NAME.test(name)) {
+            throw new Error(`Unsafe tmux session name: ${name}`);
+        }
+    }
+    sessionName(execId) {
+        return `${TmuxManager.SESSION_PREFIX}${execId}`;
+    }
+    async start(execId, shellCommand, projectDir) {
+        const name = this.sessionName(execId);
+        this.assertSafe(name);
+        const port = process.env.PORT ?? "3001";
+        await execFileAsync("tmux", [
+            "new-session", "-d",
+            "-s", name,
+            "-x", "220",
+            "-y", "50",
+            "-c", projectDir,
+            "-e", "BEADS_ACTOR=agent",
+            "-e", `BEADS_EXEC_ID=${execId}`,
+            "-e", `BEADS_API_URL=http://localhost:${port}/api`,
+            shellCommand,
+        ]);
+        // remain-on-exit keeps the pane visible after claude exits (crash, /exit, etc.)
+        // so the user can see final output and the poller can detect the dead-pane status.
+        await execFileAsync("tmux", ["set-option", "-t", name, "remain-on-exit", "on"]);
+    }
+    async capture(name, lines = 300) {
+        this.assertSafe(name);
+        try {
+            const { stdout } = await execFileAsync("tmux", [
+                "capture-pane", "-p", "-e", "-t", name, "-S", `-${lines}`,
+            ]);
+            return stdout;
+        }
+        catch {
+            return "";
+        }
+    }
+    async sendKeys(name, text) {
+        this.assertSafe(name);
+        const CHUNK = 512;
+        for (let i = 0; i < text.length; i += CHUNK) {
+            await execFileAsync("tmux", ["send-keys", "-t", name, "-l", text.slice(i, i + CHUNK)]);
+            if (i + CHUNK < text.length)
+                await new Promise((r) => setTimeout(r, 10));
+        }
+        await execFileAsync("tmux", ["send-keys", "-t", name, "Enter"]);
+    }
+    async kill(name) {
+        this.assertSafe(name);
+        try {
+            await execFileAsync("tmux", ["kill-session", "-t", name]);
+        }
+        catch {
+            // session may already be dead
+        }
+    }
+    async hasSession(name) {
+        this.assertSafe(name);
+        try {
+            await execFileAsync("tmux", ["has-session", "-t", `=${name}`]);
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+    async paneCommand(name) {
+        this.assertSafe(name);
+        try {
+            const { stdout } = await execFileAsync("tmux", [
+                "display-message", "-p", "-t", name, "#{pane_current_command}",
+            ]);
+            return stdout.trim();
+        }
+        catch {
+            return "";
+        }
+    }
+    async paneDead(name) {
+        this.assertSafe(name);
+        try {
+            const { stdout } = await execFileAsync("tmux", [
+                "display-message", "-p", "-t", name, "#{pane_dead}:#{pane_dead_status}",
+            ]);
+            const [dead, status] = stdout.trim().split(":");
+            return { dead: dead === "1", exitStatus: parseInt(status ?? "0", 10) };
+        }
+        catch {
+            return { dead: false, exitStatus: 0 };
+        }
+    }
+}
+exports.TmuxManager = TmuxManager;
+TmuxManager.SESSION_PREFIX = "beads-ui-";
+TmuxManager.VALID_NAME = /^[a-zA-Z0-9_-]+$/;
+exports.tmuxManager = new TmuxManager();
+// ── Execution manager ─────────────────────────────────────────────────────────
+class ExecutionManager {
+    constructor(triggerStore) {
+        this.triggerStore = triggerStore;
+        this.executions = new Map();
+        this.processes = new Map();
+        this.listeners = new Map();
+        // Poll tmux sessions for liveness every 2s
+        setInterval(() => { void this.pollTmuxSessions(); }, 2000);
+    }
+    async pollTmuxSessions() {
+        for (const exec of this.executions.values()) {
+            if (exec.runtimeKind !== "tmux" || exec.status !== "running" || !exec.tmuxSession)
+                continue;
+            const alive = await exports.tmuxManager.hasSession(exec.tmuxSession);
+            // Re-check after await: completeTmux/cancel may have run while we were waiting
+            if (exec.status !== "running")
+                continue;
+            if (!alive) {
+                exec.status = "failed";
+                exec.finishedAt = new Date().toISOString();
+                this.notify(exec.id, "", true, "failed");
+                this.fireTriggers(exec.issueId, "execution_failed", "");
+                continue;
+            }
+            // remain-on-exit keeps the pane alive after process exits — detect dead panes
+            const pane = await exports.tmuxManager.paneDead(exec.tmuxSession);
+            // Re-check again: status may have changed during the second await
+            if (exec.status !== "running")
+                continue;
+            if (pane.dead) {
+                exec.status = pane.exitStatus === 0 ? "completed" : "failed";
+                exec.finishedAt = new Date().toISOString();
+                this.notify(exec.id, "", true, exec.status);
+                if (exec.status === "completed") {
+                    this.fireTriggers(exec.issueId, "execution_completed", "");
+                }
+                else {
+                    this.fireTriggers(exec.issueId, "execution_failed", "");
+                }
             }
         }
-    };
-}
-const executions = new Map();
-const processes = new Map();
-const listeners = new Map();
-const triggers = new Map();
-function genId() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-}
-function notify(id, chunk, done, status, exitCode) {
-    const subs = listeners.get(id);
-    if (!subs)
-        return;
-    for (const fn of subs)
-        fn(chunk, done, status, exitCode);
-    if (done)
-        listeners.delete(id);
-}
-function fireTriggers(issueId, condition, projectDir) {
-    for (const t of triggers.values()) {
-        if (t.issueId !== issueId || !t.enabled || t.condition !== condition)
-            continue;
-        startExecution(issueId, t.command, t.id, projectDir);
     }
-}
-function startExecution(issueId, command, triggeredBy, projectDir) {
-    const id = genId();
-    const exec = {
-        id,
-        issueId,
-        command,
-        status: "running",
-        output: "",
-        startedAt: new Date().toISOString(),
-        triggeredBy,
-    };
-    executions.set(id, exec);
-    // Stamp bd writes (e.g. comments) with an "agent" actor so they're
-    // distinguishable from human-authored comments posted via the UI.
-    const actor = triggeredBy === "manual" ? "agent" : `agent:${triggeredBy}`;
-    const proc = (0, child_process_1.spawn)("sh", ["-c", command], {
-        cwd: projectDir,
-        env: { ...process.env, BEADS_ACTOR: actor },
-        stdio: ["ignore", "pipe", "pipe"],
-    });
-    processes.set(id, proc);
-    const isStreamJson = command.includes("--output-format stream-json");
-    let onData;
-    if (isStreamJson) {
-        const parse = makeStreamJsonParser((text) => {
-            exec.output += text;
-            notify(id, text, false);
+    startTmux(issueId, shellCommand, triggeredBy, projectDir) {
+        const id = ExecutionManager.genId();
+        const sessionName = exports.tmuxManager.sessionName(id);
+        const exec = {
+            id,
+            issueId,
+            command: shellCommand,
+            status: "running",
+            output: "",
+            startedAt: new Date().toISOString(),
+            triggeredBy,
+            runtimeKind: "tmux",
+            tmuxSession: sessionName,
+        };
+        this.executions.set(id, exec);
+        exports.tmuxManager.start(id, shellCommand, projectDir).catch((err) => {
+            exec.status = "failed";
+            exec.finishedAt = new Date().toISOString();
+            exec.output = `Failed to start tmux session: ${err.message}\n`;
+            this.notify(id, exec.output, true, "failed");
         });
-        onData = (data) => parse(data.toString());
+        return exec;
     }
-    else {
-        onData = (data) => {
+    start(issueId, command, triggeredBy, projectDir) {
+        const id = ExecutionManager.genId();
+        const exec = {
+            id,
+            issueId,
+            command,
+            status: "running",
+            output: "",
+            startedAt: new Date().toISOString(),
+            triggeredBy,
+            runtimeKind: "process",
+        };
+        this.executions.set(id, exec);
+        const actor = triggeredBy === "manual" ? "agent" : `agent:${triggeredBy}`;
+        const proc = (0, child_process_1.spawn)("sh", ["-c", command], {
+            cwd: projectDir,
+            env: { ...process.env, BEADS_ACTOR: actor },
+            stdio: ["ignore", "pipe", "pipe"],
+        });
+        this.processes.set(id, proc);
+        const isStreamJson = command.includes("--output-format stream-json");
+        let onData;
+        if (isStreamJson) {
+            const parser = new StreamJsonParser((text) => {
+                exec.output += text;
+                this.notify(id, text, false);
+            });
+            onData = (data) => parser.process(data.toString());
+        }
+        else {
+            onData = (data) => {
+                const chunk = data.toString();
+                exec.output += chunk;
+                this.notify(id, chunk, false);
+            };
+        }
+        proc.stdout?.on("data", onData);
+        proc.stderr?.on("data", (data) => {
             const chunk = data.toString();
             exec.output += chunk;
-            notify(id, chunk, false);
-        };
+            this.notify(id, chunk, false);
+        });
+        proc.on("close", (code) => {
+            exec.exitCode = code ?? undefined;
+            exec.status = code === 0 ? "completed" : "failed";
+            exec.finishedAt = new Date().toISOString();
+            this.processes.delete(id);
+            this.notify(id, "", true, exec.status, exec.exitCode);
+            this.fireTriggers(issueId, exec.status === "completed" ? "execution_completed" : "execution_failed", projectDir);
+        });
+        proc.on("error", (err) => {
+            const msg = `\nProcess error: ${err.message}\n`;
+            exec.output += msg;
+            exec.status = "failed";
+            exec.finishedAt = new Date().toISOString();
+            this.processes.delete(id);
+            this.notify(id, msg, true, "failed");
+        });
+        return exec;
     }
-    proc.stdout?.on("data", onData);
-    proc.stderr?.on("data", (data) => {
-        // stderr is never stream-json; always pass through raw
-        const chunk = data.toString();
-        exec.output += chunk;
-        notify(id, chunk, false);
-    });
-    proc.on("close", (code) => {
-        exec.exitCode = code ?? undefined;
-        exec.status = code === 0 ? "completed" : "failed";
-        exec.finishedAt = new Date().toISOString();
-        processes.delete(id);
-        notify(id, "", true, exec.status, exec.exitCode);
-        fireTriggers(issueId, exec.status === "completed" ? "execution_completed" : "execution_failed", projectDir);
-    });
-    proc.on("error", (err) => {
-        const msg = `\nProcess error: ${err.message}\n`;
-        exec.output += msg;
-        exec.status = "failed";
-        exec.finishedAt = new Date().toISOString();
-        processes.delete(id);
-        notify(id, msg, true, "failed");
-    });
-    return exec;
-}
-function cancelExecution(id) {
-    const proc = processes.get(id);
-    if (!proc)
-        return false;
-    proc.kill("SIGTERM");
-    const exec = executions.get(id);
-    if (exec) {
+    cancel(id) {
+        console.log(`Cancelling execution ${id}`);
+        const exec = this.executions.get(id);
+        if (!exec)
+            return false;
+        if (exec.runtimeKind === "tmux" && exec.tmuxSession) {
+            exports.tmuxManager.kill(exec.tmuxSession).catch(() => { });
+            if (exec.status === "running") {
+                exec.status = "cancelled";
+                exec.finishedAt = new Date().toISOString();
+                this.notify(id, "", true, "cancelled");
+            }
+            return true;
+        }
+        const proc = this.processes.get(id);
+        if (!proc)
+            return false;
+        proc.kill("SIGTERM");
         exec.status = "cancelled";
         exec.finishedAt = new Date().toISOString();
-        notify(id, "", true, "cancelled");
+        this.notify(id, "", true, "cancelled");
+        this.processes.delete(id);
+        return true;
     }
-    processes.delete(id);
-    return true;
+    completeTmux(id) {
+        console.log(`Completing tmux execution ${id}`);
+        const exec = this.executions.get(id);
+        if (!exec || exec.runtimeKind !== "tmux" || !exec.tmuxSession)
+            return false;
+        exports.tmuxManager.kill(exec.tmuxSession).catch(() => { });
+        if (exec.status === "running") {
+            exec.status = "completed";
+            exec.finishedAt = new Date().toISOString();
+            this.notify(id, "", true, "completed");
+            this.fireTriggers(exec.issueId, "execution_completed", "");
+        }
+        return true;
+    }
+    getAllTmux() {
+        return Array.from(this.executions.values()).filter((e) => e.runtimeKind === "tmux");
+    }
+    getForIssue(issueId) {
+        return Array.from(this.executions.values())
+            .filter((e) => e.issueId === issueId)
+            .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+    }
+    get(id) {
+        return this.executions.get(id);
+    }
+    subscribe(id, fn) {
+        if (!this.listeners.has(id))
+            this.listeners.set(id, new Set());
+        this.listeners.get(id).add(fn);
+        return () => this.listeners.get(id)?.delete(fn);
+    }
+    notify(id, chunk, done, status, exitCode) {
+        const subs = this.listeners.get(id);
+        if (!subs)
+            return;
+        for (const fn of subs)
+            fn(chunk, done, status, exitCode);
+        if (done)
+            this.listeners.delete(id);
+    }
+    fireTriggers(issueId, condition, projectDir) {
+        for (const t of this.triggerStore.getMatching(issueId, condition)) {
+            this.start(issueId, t.command, t.id, projectDir);
+        }
+    }
+    static genId() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    }
 }
-function getExecutionsForIssue(issueId) {
-    return Array.from(executions.values())
-        .filter((e) => e.issueId === issueId)
-        .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
-}
-function getExecution(id) {
-    return executions.get(id);
-}
-function subscribeToExecution(id, fn) {
-    if (!listeners.has(id))
-        listeners.set(id, new Set());
-    listeners.get(id).add(fn);
-    return () => listeners.get(id)?.delete(fn);
-}
-// Triggers
-function getTriggersForIssue(issueId) {
-    return Array.from(triggers.values()).filter((t) => t.issueId === issueId);
-}
-function createTrigger(data) {
-    const trigger = { ...data, id: genId(), createdAt: new Date().toISOString() };
-    triggers.set(trigger.id, trigger);
-    return trigger;
-}
-function updateTrigger(id, patch) {
-    const t = triggers.get(id);
-    if (!t)
-        return undefined;
-    Object.assign(t, patch);
-    return t;
-}
-function deleteTrigger(id) {
-    return triggers.delete(id);
-}
+exports.ExecutionManager = ExecutionManager;
+// ── Singletons ────────────────────────────────────────────────────────────────
+exports.triggerStore = new TriggerStore();
+exports.executionManager = new ExecutionManager(exports.triggerStore);

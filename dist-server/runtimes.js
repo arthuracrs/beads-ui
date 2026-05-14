@@ -3,8 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.listRuntimes = listRuntimes;
-exports.getRuntime = getRuntime;
+exports.runtimeRegistry = exports.RuntimeRegistry = void 0;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const os_1 = __importDefault(require("os"));
@@ -19,6 +18,14 @@ const BUILTINS = [
         builtin: true,
     },
     {
+        id: "claude-tmux",
+        name: "Claude (tmux)",
+        description: "Interactive Claude TUI in a tmux session — watch and nudge it from the browser",
+        commandTemplate: `claude --dangerously-skip-permissions {prompt}`,
+        kind: "tmux",
+        builtin: true,
+    },
+    {
         id: "cursor",
         name: "Cursor",
         description: "Cursor AI agent CLI (--force applies changes directly)",
@@ -26,21 +33,27 @@ const BUILTINS = [
         builtin: true,
     },
 ];
-const CONFIG_DIR = path_1.default.join(os_1.default.homedir(), ".config", "beads-ui");
-const CONFIG_FILE = path_1.default.join(CONFIG_DIR, "runtimes.json");
-function loadCustom() {
-    try {
-        if (!fs_1.default.existsSync(CONFIG_FILE))
+class RuntimeRegistry {
+    constructor() {
+        this.builtins = [...BUILTINS];
+        this.configFile = path_1.default.join(os_1.default.homedir(), ".config", "beads-ui", "runtimes.json");
+    }
+    list() {
+        return [...this.builtins, ...this.loadCustom()];
+    }
+    get(id) {
+        return this.list().find((r) => r.id === id);
+    }
+    loadCustom() {
+        try {
+            if (!fs_1.default.existsSync(this.configFile))
+                return [];
+            return JSON.parse(fs_1.default.readFileSync(this.configFile, "utf-8"));
+        }
+        catch {
             return [];
-        return JSON.parse(fs_1.default.readFileSync(CONFIG_FILE, "utf-8"));
-    }
-    catch {
-        return [];
+        }
     }
 }
-function listRuntimes() {
-    return [...BUILTINS, ...loadCustom()];
-}
-function getRuntime(id) {
-    return listRuntimes().find((r) => r.id === id);
-}
+exports.RuntimeRegistry = RuntimeRegistry;
+exports.runtimeRegistry = new RuntimeRegistry();

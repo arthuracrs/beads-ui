@@ -116,6 +116,26 @@ class ExecutionsApi {
   }
 }
 
+class TmuxApi {
+  constructor(private readonly http: HttpClient) {}
+
+  list(): Promise<AgentExecution[]> {
+    return this.http.request<AgentExecution[]>("/tmux/sessions");
+  }
+
+  sendInput(execId: string, text: string): Promise<{ ok: boolean }> {
+    return this.http.request<{ ok: boolean }>(`/executions/${execId}/input`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  }
+
+  kill(execId: string): Promise<{ ok: boolean }> {
+    return this.http.request<{ ok: boolean }>(`/tmux/sessions/${execId}`, { method: "DELETE" });
+  }
+}
+
 class TriggersApi {
   constructor(private readonly http: HttpClient) {}
 
@@ -150,6 +170,7 @@ export class ApiClient {
   readonly runtimes: RuntimesApi;
   readonly executions: ExecutionsApi;
   readonly triggers: TriggersApi;
+  readonly tmux: TmuxApi;
   private readonly http: HttpClient;
 
   constructor(base: string) {
@@ -159,6 +180,7 @@ export class ApiClient {
     this.runtimes = new RuntimesApi(this.http);
     this.executions = new ExecutionsApi(this.http);
     this.triggers = new TriggersApi(this.http);
+    this.tmux = new TmuxApi(this.http);
   }
 
   initStatus(): Promise<{ initialized: boolean }> {

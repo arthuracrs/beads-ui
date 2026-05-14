@@ -7,7 +7,7 @@ import { RunAgentModal } from "./RunAgentModal";
 
 interface Props {
   issue: IssueModel;
-  onOpenExecution: (id: string) => void;
+  onOpenExecution: (id: string, runtimeKind?: string) => void;
 }
 
 const statusIcon: Record<ExecStatus, string> = {
@@ -125,6 +125,7 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
   const loadExecutions = useCallback(async () => {
     try {
       const data = await api.executions.list(issue.id);
+      console.log(data)
       setExecutions(data.map(ExecutionModel.from));
     } catch { /* non-critical */ }
   }, [issue.id]);
@@ -205,7 +206,7 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
           {executions.map((exec) => (
             <button
               key={exec.id}
-              onClick={() => onOpenExecution(exec.id)}
+              onClick={() => onOpenExecution(exec.id, exec.runtimeKind)}
               className="group w-full flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface2)] px-3 py-2.5 text-left hover:border-[var(--accent)]/40 transition-all"
             >
               <span className={`text-sm shrink-0 ${statusColor[exec.status]}`}>
@@ -276,7 +277,7 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
           onStarted={(exec) => {
             setShowRunModal(false);
             setExecutions((prev) => [ExecutionModel.from(exec), ...prev]);
-            onOpenExecution(exec.id);
+            onOpenExecution(exec.id, exec.runtimeKind);
           }}
         />
       )}

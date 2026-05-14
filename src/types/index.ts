@@ -56,6 +56,7 @@ export interface AgentRuntime {
   description: string;
   commandTemplate: string;
   builtin: boolean;
+  kind?: "process" | "tmux";
 }
 
 export type ExecStatus = "running" | "completed" | "failed" | "cancelled";
@@ -70,6 +71,8 @@ export interface AgentExecution {
   startedAt: string;
   finishedAt?: string;
   triggeredBy: string;
+  runtimeKind?: "process" | "tmux";
+  tmuxSession?: string;
 }
 
 export interface AgentTrigger {

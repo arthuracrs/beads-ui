@@ -5,7 +5,7 @@ import { promisify } from "util";
 import path from "path";
 import os from "os";
 import fs from "fs";
-import { executionManager, triggerStore } from "./executions";
+import { executionManager, tmuxManager, triggerStore } from "./executions";
 import { runtimeRegistry } from "./runtimes";
 
 const execAsync = promisify(exec);
@@ -81,9 +81,52 @@ class BdClient {
   }
 }
 
+// ── MCP config bootstrap ──────────────────────────────────────────────────────
+
+function mcpServerPath(): string {
+  // Production: compiled mcp-session.js lands in dist-server/ alongside this file
+  const sameDir = path.join(__dirname, "mcp-session.js");
+  if (fs.existsSync(sameDir)) return sameDir;
+  // Dev (tsx runner): __dirname = server/, dist-server is one level up
+  const distDir = path.join(__dirname, "..", "dist-server", "mcp-session.js");
+  if (fs.existsSync(distDir)) return distDir;
+  // TypeScript source fallback (tsx from node_modules)
+  return path.join(__dirname, "mcp-session.ts");
+}
+
+function ensureMcpConfig(projectDir: string): void {
+  const mcpJsonPath = path.join(projectDir, ".mcp.json");
+  let config: Record<string, unknown> = {};
+  try {
+    if (fs.existsSync(mcpJsonPath)) {
+      config = JSON.parse(fs.readFileSync(mcpJsonPath, "utf-8")) as Record<string, unknown>;
+    }
+  } catch {
+    // start fresh if file is corrupt
+  }
+  if (!config.mcpServers) config.mcpServers = {};
+  const servers = config.mcpServers as Record<string, unknown>;
+
+  const serverPath = mcpServerPath();
+  const isTs = serverPath.endsWith(".ts");
+  const command = isTs
+    ? path.join(__dirname, "..", "node_modules", ".bin", "tsx")
+    : process.execPath;
+
+  servers["beads-session"] = { command, args: [serverPath] };
+
+  try {
+    fs.writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
+    console.log(`beads-session MCP registered in ${mcpJsonPath}`);
+  } catch (err) {
+    console.warn(`Warning: could not write .mcp.json: ${(err as Error).message}`);
+  }
+}
+
 // ── App setup ─────────────────────────────────────────────────────────────────
 
 const bd = new BdClient();
+ensureMcpConfig(bd.projectDir);
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -345,12 +388,25 @@ app.post("/api/executions", async (req, res) => {
     } catch {
       // If bd show fails, run anyway with just the user prompt.
     }
-    const finalPrompt = context
+    const basePrompt = context
       ? `Issue context (output of \`bd show ${issueId}\`):\n\n${context}\n\n---\n\n${resolvedPrompt}`
       : resolvedPrompt;
-    const command = BdClient.interpolate(runtime.commandTemplate, { prompt: BdClient.shQuote(finalPrompt) });
-    const execution = executionManager.start(issueId, command, "manual", bd.projectDir);
-    res.json(execution);
+
+    const finalPrompt = runtime.kind === "tmux"
+      ? `${basePrompt}\n\n---\n\nWhen you have fully completed this task, call the \`end_session\` MCP tool to close this session and mark the work as done.`
+      : basePrompt;
+
+    const quotedPrompt = BdClient.shQuote(finalPrompt);
+
+    const command = BdClient.interpolate(runtime.commandTemplate, { prompt: quotedPrompt });
+
+    if (runtime.kind === "tmux") {
+      const execution = executionManager.startTmux(issueId, command, "manual", bd.projectDir);
+      res.json(execution);
+    } else {
+      const execution = executionManager.start(issueId, command, "manual", bd.projectDir);
+      res.json(execution);
+    }
   } catch (err: unknown) {
     const e = err as { stderr?: string; message: string };
     res.status(500).json({ error: e.stderr || e.message });
@@ -359,6 +415,7 @@ app.post("/api/executions", async (req, res) => {
 
 // DELETE /api/executions/:id  (cancel)
 app.delete("/api/executions/:id", (req, res) => {
+  console.log(`Received request to cancel execution ${req.params.id}`);
   const ok = executionManager.cancel(req.params.id);
   res.json({ ok });
 });
@@ -401,6 +458,96 @@ app.get("/api/executions/:id/stream", (req, res) => {
   });
 
   req.on("close", unsub);
+});
+
+// ── Tmux sessions ─────────────────────────────────────────────────────────────
+
+// GET /api/tmux/sessions — all tmux executions (global sessions screen)
+app.get("/api/tmux/sessions", (_req, res) => {
+  res.json(executionManager.getAllTmux());
+});
+
+// POST /api/tmux/sessions/:id/complete — agent signals task done (called by end_session MCP tool)
+app.post("/api/tmux/sessions/:id/complete", (req, res) => {
+  const ok = executionManager.completeTmux(req.params.id);
+  res.json({ ok });
+});
+
+// DELETE /api/tmux/sessions/:id — user kills a session from the UI
+app.delete("/api/tmux/sessions/:id", (req, res) => {
+  const ok = executionManager.cancel(req.params.id);
+  res.json({ ok });
+});
+
+// GET /api/executions/:id/pane  (SSE — polled tmux capture-pane output)
+app.get("/api/executions/:id/pane", async (req, res) => {
+  const execution = executionManager.get(req.params.id);
+  if (!execution || !execution.tmuxSession) {
+    res.status(404).json({ error: "Tmux execution not found" });
+    return;
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  res.socket?.setNoDelay(true);
+
+  const send = (payload: object) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    (res as unknown as { flush?: () => void }).flush?.();
+  };
+
+  const sessionName = execution.tmuxSession;
+
+  // Send initial capture immediately
+  const initial = await tmuxManager.capture(sessionName);
+  if (initial) send({ type: "pane", data: initial });
+
+  if (execution.status !== "running") {
+    send({ type: "done", status: execution.status });
+    res.end();
+    return;
+  }
+
+  const interval = setInterval(async () => {
+    const exec = executionManager.get(req.params.id)!;
+    const paneData = await tmuxManager.capture(sessionName);
+    if (paneData) send({ type: "pane", data: paneData });
+
+    if (exec.status !== "running") {
+      send({ type: "done", status: exec.status });
+      clearInterval(interval);
+      res.end();
+    }
+  }, 500);
+
+  req.on("close", () => clearInterval(interval));
+});
+
+// POST /api/executions/:id/input — send text to a running tmux session
+app.post("/api/executions/:id/input", async (req, res) => {
+  const execution = executionManager.get(req.params.id);
+  if (!execution || !execution.tmuxSession) {
+    res.status(404).json({ error: "Tmux execution not found" });
+    return;
+  }
+  const { text } = req.body as { text?: string };
+  if (typeof text !== "string" || text.length === 0) {
+    res.status(400).json({ error: "text is required" });
+    return;
+  }
+  if (text.length > 16384) {
+    res.status(400).json({ error: "text too long (max 16384 bytes)" });
+    return;
+  }
+  try {
+    await tmuxManager.sendKeys(execution.tmuxSession, text);
+    res.json({ ok: true });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 // ── Triggers ──────────────────────────────────────────────────────────────────

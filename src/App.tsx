@@ -7,6 +7,8 @@ import { IssueRow } from "./components/IssueRow";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { IssueDetail } from "./components/IssueDetail";
 import { ExecutionView } from "./components/ExecutionView";
+import { TmuxSessionsView } from "./components/TmuxSessionsView";
+import { TmuxSessionView } from "./components/TmuxSessionView";
 import { CreateIssueModal } from "./components/CreateIssueModal";
 import { StatsBar } from "./components/StatsBar";
 
@@ -25,6 +27,7 @@ type Layout = "list" | "board";
 const viewLabel: Record<View, string> = {
   all: "All Issues",
   ready: "Ready to Work",
+  sessions: "Sessions",
   open: "Open",
   in_progress: "In Progress",
   blocked: "Blocked",
@@ -47,11 +50,13 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
+  const [selectedTmuxExecId, setSelectedTmuxExecId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [initialized, setInitialized] = useState<boolean | null>(null);
   const [initializing, setInitializing] = useState(false);
 
   const loadIssues = useCallback(async (opts?: { silent?: boolean }) => {
+    if (view === "sessions") return;
     const silent = opts?.silent === true;
     if (!silent) {
       setLoading(true);
@@ -174,7 +179,7 @@ export default function App() {
             {viewLabel[view]}
           </h1>
 
-          {view !== "ready" && (
+          {view !== "ready" && view !== "sessions" && (
             <input
               className="flex-1 max-w-xs rounded-md border border-[var(--border)] bg-[var(--surface2)] px-3 py-1.5 text-sm text-[var(--text)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent)]"
               placeholder="Search…"
@@ -187,30 +192,32 @@ export default function App() {
             <StatsBar stats={stats} />
 
             {/* Layout toggle */}
-            <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
-              <button
-                onClick={() => setLayout("list")}
-                title="List view"
-                className={`px-2.5 py-1.5 text-sm transition-colors ${
-                  layout === "list"
-                    ? "bg-[var(--surface2)] text-[var(--text)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text)]"
-                }`}
-              >
-                ≡
-              </button>
-              <button
-                onClick={() => setLayout("board")}
-                title="Board view"
-                className={`px-2.5 py-1.5 text-sm transition-colors border-l border-[var(--border)] ${
-                  layout === "board"
-                    ? "bg-[var(--surface2)] text-[var(--text)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text)]"
-                }`}
-              >
-                ⊞
-              </button>
-            </div>
+            {view !== "sessions" && (
+              <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
+                <button
+                  onClick={() => setLayout("list")}
+                  title="List view"
+                  className={`px-2.5 py-1.5 text-sm transition-colors ${
+                    layout === "list"
+                      ? "bg-[var(--surface2)] text-[var(--text)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                  }`}
+                >
+                  ≡
+                </button>
+                <button
+                  onClick={() => setLayout("board")}
+                  title="Board view"
+                  className={`px-2.5 py-1.5 text-sm transition-colors border-l border-[var(--border)] ${
+                    layout === "board"
+                      ? "bg-[var(--surface2)] text-[var(--text)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                  }`}
+                >
+                  ⊞
+                </button>
+              </div>
+            )}
 
             <button
               onClick={() => setShowCreate(true)}
@@ -228,20 +235,25 @@ export default function App() {
           </div>
         </div>
 
+        {/* Sessions view */}
+        {view === "sessions" && (
+          <TmuxSessionsView onOpenSession={setSelectedTmuxExecId} />
+        )}
+
         {/* Content */}
-        {loading && (
+        {view !== "sessions" && loading && (
           <div className="flex flex-1 items-center justify-center text-[var(--text-muted)] text-sm">
             Loading…
           </div>
         )}
 
-        {!loading && error && (
+        {view !== "sessions" && !loading && error && (
           <div className="m-5 rounded-lg border border-[var(--red)]/30 bg-[var(--red)]/10 p-4 text-sm text-[var(--red)]">
             {error}
           </div>
         )}
 
-        {!loading && !error && issues.length === 0 && (
+        {view !== "sessions" && !loading && !error && issues.length === 0 && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-[var(--text-muted)]">
             <span className="text-2xl">○</span>
             <span className="text-sm">No issues found</span>
@@ -251,7 +263,7 @@ export default function App() {
           </div>
         )}
 
-        {!loading && !error && issues.length > 0 && (
+        {view !== "sessions" && !loading && !error && issues.length > 0 && (
           showKanban ? (
             <div className="flex-1 overflow-hidden">
               <KanbanBoard issues={issues} onSelect={setSelectedId} />
@@ -280,7 +292,13 @@ export default function App() {
           issueId={selectedId}
           onClose={() => setSelectedId(null)}
           onUpdated={handleUpdated}
-          onOpenExecution={setSelectedExecutionId}
+          onOpenExecution={(id, runtimeKind) => {
+            if (runtimeKind === "tmux") {
+              setSelectedTmuxExecId(id);
+            } else {
+              setSelectedExecutionId(id);
+            }
+          }}
         />
       )}
 
@@ -288,6 +306,13 @@ export default function App() {
         <ExecutionView
           executionId={selectedExecutionId}
           onClose={() => setSelectedExecutionId(null)}
+        />
+      )}
+
+      {selectedTmuxExecId && (
+        <TmuxSessionView
+          executionId={selectedTmuxExecId}
+          onClose={() => setSelectedTmuxExecId(null)}
         />
       )}
 

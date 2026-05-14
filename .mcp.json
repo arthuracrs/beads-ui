@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "beads-session": {
+      "command": "/Users/arthurcalebe/.nvm/versions/node/v24.14.1/bin/node",
+      "args": [
+        "/Users/arthurcalebe/Desktop/fon/beads-ui/dist-server/mcp-session.js"
+      ]
+    }
+  }
+}

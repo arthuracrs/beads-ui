@@ -11,6 +11,8 @@ export class ExecutionModel implements AgentExecution {
   startedAt!: string;
   finishedAt?: string;
   triggeredBy!: string;
+  runtimeKind?: "process" | "tmux";
+  tmuxSession?: string;
 
   private constructor(data: AgentExecution) {
     Object.assign(this, data);

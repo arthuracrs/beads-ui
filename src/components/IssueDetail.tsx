@@ -9,7 +9,7 @@ interface Props {
   issueId: string;
   onClose: () => void;
   onUpdated: () => void;
-  onOpenExecution: (id: string) => void;
+  onOpenExecution: (id: string, runtimeKind?: string) => void;
 }
 
 const statuses: Status[] = ["open", "in_progress", "blocked", "deferred", "closed"];

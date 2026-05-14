@@ -8,6 +8,7 @@ export interface AgentRuntime {
   description: string;
   commandTemplate: string; // {prompt} is replaced with the user's prompt text
   builtin: boolean;
+  kind?: "process" | "tmux"; // defaults to "process"
 }
 
 // NOTE: {prompt} is shell-quoted server-side, so templates must NOT wrap it
@@ -18,6 +19,14 @@ const BUILTINS: AgentRuntime[] = [
     name: "Claude Code",
     description: "Anthropic Claude Code CLI",
     commandTemplate: `claude --dangerously-skip-permissions -p {prompt} --output-format stream-json --verbose --include-partial-messages`,
+    builtin: true,
+  },
+  {
+    id: "claude-tmux",
+    name: "Claude (tmux)",
+    description: "Interactive Claude TUI in a tmux session — watch and nudge it from the browser",
+    commandTemplate: `claude --dangerously-skip-permissions {prompt}`,
+    kind: "tmux",
     builtin: true,
   },
   {
