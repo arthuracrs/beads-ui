@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { AgentExecution, ExecStatus } from "../types";
+import { TimeFormatter } from "../lib/TimeFormatter";
 
 interface Props {
   executionId: string;
@@ -23,13 +24,6 @@ const statusIcon: Record<ExecStatus, string> = {
 
 function stripAnsi(str: string): string {
   return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
-}
-
-function elapsed(start: string, end?: string): string {
-  const ms = new Date(end ?? Date.now()).getTime() - new Date(start).getTime();
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
 }
 
 export function ExecutionView({ executionId, onClose }: Props) {
@@ -129,7 +123,7 @@ export function ExecutionView({ executionId, onClose }: Props) {
           {status}
           {status === "running" && (
             <span className="text-[var(--text-muted)]">
-              · {exec ? elapsed(exec.startedAt) : "…"}
+              · {exec ? TimeFormatter.elapsed(exec.startedAt) : "…"}
             </span>
           )}
         </span>
@@ -173,7 +167,7 @@ export function ExecutionView({ executionId, onClose }: Props) {
       <div className="flex items-center gap-4 border-t border-[var(--border)] bg-[var(--surface)] px-5 py-2 text-xs text-[var(--text-muted)]">
         <span>{output.split("\n").length} lines · {(new Blob([output]).size / 1024).toFixed(1)} KB</span>
         {status !== "running" && exec?.finishedAt && (
-          <span>Finished in {elapsed(exec.startedAt, exec.finishedAt)}</span>
+          <span>Finished in {TimeFormatter.elapsed(exec.startedAt, exec.finishedAt)}</span>
         )}
         <span className="ml-auto">Press Esc to close</span>
       </div>

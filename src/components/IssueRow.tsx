@@ -1,18 +1,9 @@
-import type { Issue } from "../types";
+import type { IssueModel } from "../models/IssueModel";
 import { StatusBadge, TypeBadge, PriorityBadge } from "./Badge";
 
 interface Props {
-  issue: Issue;
+  issue: IssueModel;
   onClick: () => void;
-}
-
-function timeAgo(dateStr: string) {
-  const d = new Date(dateStr);
-  const diff = (Date.now() - d.getTime()) / 1000;
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 export function IssueRow({ issue, onClick }: Props) {
@@ -30,7 +21,7 @@ export function IssueRow({ issue, onClick }: Props) {
             <span className="text-xs text-[var(--text-muted)]">@{issue.assignee}</span>
           )}
         </div>
-        <p className={`mt-0.5 text-sm font-medium leading-snug ${issue.status === "closed" ? "text-[var(--text-muted)] line-through" : "text-[var(--text)]"}`}>
+        <p className={`mt-0.5 text-sm font-medium leading-snug ${issue.isClosed() ? "text-[var(--text-muted)] line-through" : "text-[var(--text)]"}`}>
           {issue.title}
         </p>
         {issue.description && (
@@ -39,7 +30,7 @@ export function IssueRow({ issue, onClick }: Props) {
       </div>
       <div className="flex flex-col items-end gap-1.5 shrink-0">
         <StatusBadge status={issue.status} />
-        <span className="text-xs text-[var(--text-muted)]">{timeAgo(issue.updated_at)}</span>
+        <span className="text-xs text-[var(--text-muted)]">{issue.timeAgo()}</span>
       </div>
     </button>
   );

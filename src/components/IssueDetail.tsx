@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
-import type { Issue, Status, IssueType } from "../types";
+import type { Status, IssueType } from "../types";
+import { IssueModel } from "../models/IssueModel";
 import { StatusBadge, TypeBadge, PriorityBadge } from "./Badge";
 import { AgentsPanel } from "./AgentsPanel";
 
@@ -14,13 +15,8 @@ interface Props {
 const statuses: Status[] = ["open", "in_progress", "blocked", "deferred", "closed"];
 const types: IssueType[] = ["task", "bug", "feature", "epic", "chore"];
 
-function fmt(d: string | undefined) {
-  if (!d) return "";
-  return new Date(d).toLocaleString();
-}
-
 export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Props) {
-  const [issue, setIssue] = useState<Issue | null>(null);
+  const [issue, setIssue] = useState<IssueModel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [comment, setComment] = useState("");
@@ -37,7 +33,7 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
     }
     try {
       const data = await api.issues.get(issueId);
-      setIssue(data);
+      setIssue(IssueModel.from(data));
     } catch (err: unknown) {
       if (!silent) setError((err as Error).message);
     } finally {
@@ -55,12 +51,12 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
     return () => clearInterval(interval);
   }, [load]);
 
-  async function updateField(patch: Partial<Issue>) {
+  async function updateField(patch: Partial<IssueModel>) {
     if (!issue) return;
     setActionLoading(true);
     try {
       const updated = await api.issues.update(issue.id, patch);
-      setIssue(updated);
+      setIssue(IssueModel.from(updated));
       onUpdated();
     } catch (err: unknown) {
       alert((err as Error).message);
@@ -74,7 +70,7 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
     setActionLoading(true);
     try {
       const updated = await api.issues.claim(issue.id);
-      setIssue(updated);
+      setIssue(IssueModel.from(updated));
       onUpdated();
     } catch (err: unknown) {
       alert((err as Error).message);
@@ -88,7 +84,7 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
     setActionLoading(true);
     try {
       const updated = await api.issues.close(issue.id, closeReason || undefined);
-      setIssue(updated);
+      setIssue(IssueModel.from(updated));
       setShowCloseForm(false);
       onUpdated();
     } catch (err: unknown) {
@@ -103,7 +99,7 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
     setActionLoading(true);
     try {
       const updated = await api.issues.reopen(issue.id);
-      setIssue(updated);
+      setIssue(IssueModel.from(updated));
       onUpdated();
     } catch (err: unknown) {
       alert((err as Error).message);
@@ -189,9 +185,9 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
               <Field label="Assignee">
                 <span className="text-[var(--text)]">{issue.assignee || <span className="text-[var(--text-muted)]">—</span>}</span>
               </Field>
-              <Field label="Created">{fmt(issue.created_at)}</Field>
-              <Field label="Updated">{fmt(issue.updated_at)}</Field>
-              {issue.closed_at && <Field label="Closed">{fmt(issue.closed_at)}</Field>}
+              <Field label="Created">{issue.createdFmt()}</Field>
+              <Field label="Updated">{issue.updatedFmt()}</Field>
+              {issue.closed_at && <Field label="Closed">{issue.closedFmt()}</Field>}
               {issue.close_reason && <Field label="Close reason">{issue.close_reason}</Field>}
             </div>
 
@@ -236,7 +232,7 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
             <section className="mb-4">
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Actions</h3>
               <div className="flex flex-wrap gap-2">
-                {issue.status !== "closed" && (
+                {!issue.isClosed() && (
                   <>
                     <button
                       onClick={handleClaim}
@@ -272,7 +268,7 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
                     )}
                   </>
                 )}
-                {issue.status === "closed" && (
+                {issue.isClosed() && (
                   <button
                     onClick={handleReopen}
                     disabled={actionLoading}
@@ -293,11 +289,11 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
             {/* Comments */}
             <section>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                Comments {issue.comments && issue.comments.length > 0 ? `(${issue.comments.length})` : ""}
+                Comments {issue.commentCount() > 0 ? `(${issue.commentCount()})` : ""}
               </h3>
-              {issue.comments && issue.comments.length > 0 && (
+              {issue.commentCount() > 0 && (
                 <div className="mb-3 space-y-2">
-                  {issue.comments.map((c) => (
+                  {issue.comments!.map((c) => (
                     <div key={c.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-3">
                       <div className="mb-1 flex items-center gap-2 text-xs text-[var(--text-muted)]">
                         {c.author && <span>@{c.author}</span>}

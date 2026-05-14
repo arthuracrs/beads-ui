@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
-import type { Issue, AgentExecution, AgentTrigger, ExecStatus } from "../types";
+import type { IssueModel } from "../models/IssueModel";
+import { ExecutionModel } from "../models/ExecutionModel";
+import type { AgentTrigger, ExecStatus } from "../types";
 import { RunAgentModal } from "./RunAgentModal";
 
 interface Props {
-  issue: Issue;
+  issue: IssueModel;
   onOpenExecution: (id: string) => void;
 }
 
@@ -20,21 +22,6 @@ const statusColor: Record<ExecStatus, string> = {
   failed:    "text-[var(--red)]",
   cancelled: "text-[var(--text-muted)]",
 };
-
-function timeAgo(dateStr: string) {
-  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
-
-function elapsed(start: string, end?: string): string {
-  const ms = new Date(end ?? Date.now()).getTime() - new Date(start).getTime();
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
-}
 
 // ── Add Trigger modal ─────────────────────────────────────────────────────────
 interface TriggerModalProps {
@@ -129,7 +116,7 @@ function AddTriggerModal({ issueId, onClose, onCreated }: TriggerModalProps) {
 
 // ── Main AgentsPanel ──────────────────────────────────────────────────────────
 export function AgentsPanel({ issue, onOpenExecution }: Props) {
-  const [executions, setExecutions] = useState<AgentExecution[]>([]);
+  const [executions, setExecutions] = useState<ExecutionModel[]>([]);
   const [triggers, setTriggers] = useState<AgentTrigger[]>([]);
   const [showRunModal, setShowRunModal] = useState(false);
   const [showTriggerModal, setShowTriggerModal] = useState(false);
@@ -138,7 +125,7 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
   const loadExecutions = useCallback(async () => {
     try {
       const data = await api.executions.list(issue.id);
-      setExecutions(data);
+      setExecutions(data.map(ExecutionModel.from));
     } catch { /* non-critical */ }
   }, [issue.id]);
 
@@ -227,10 +214,10 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
               <div className="flex-1 min-w-0">
                 <p className="truncate font-mono text-xs text-[var(--text)]">{exec.command}</p>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] text-[var(--text-muted)]">{timeAgo(exec.startedAt)}</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">{exec.timeAgo()}</span>
                   <span className="text-[10px] text-[var(--text-muted)]">·</span>
-                  <span className="text-[10px] text-[var(--text-muted)]">{elapsed(exec.startedAt, exec.finishedAt)}</span>
-                  {exec.triggeredBy !== "manual" && (
+                  <span className="text-[10px] text-[var(--text-muted)]">{exec.elapsed()}</span>
+                  {exec.isTriggered() && (
                     <>
                       <span className="text-[10px] text-[var(--text-muted)]">·</span>
                       <span className="text-[10px] text-[var(--accent)]">triggered</span>
@@ -288,7 +275,7 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
           onClose={() => setShowRunModal(false)}
           onStarted={(exec) => {
             setShowRunModal(false);
-            setExecutions((prev) => [exec, ...prev]);
+            setExecutions((prev) => [ExecutionModel.from(exec), ...prev]);
             onOpenExecution(exec.id);
           }}
         />

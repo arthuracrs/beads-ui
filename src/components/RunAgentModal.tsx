@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
-import type { Issue, AgentExecution, AgentRuntime } from "../types";
+import type { IssueModel } from "../models/IssueModel";
+import type { AgentExecution, AgentRuntime } from "../types";
 
 interface Props {
-  issue: Issue;
+  issue: IssueModel;
   onClose: () => void;
   onStarted: (exec: AgentExecution) => void;
 }

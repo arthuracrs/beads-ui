@@ -29,24 +29,31 @@ const BUILTINS: AgentRuntime[] = [
   },
 ];
 
-const CONFIG_DIR = path.join(os.homedir(), ".config", "beads-ui");
-const CONFIG_FILE = path.join(CONFIG_DIR, "runtimes.json");
+export class RuntimeRegistry {
+  private readonly builtins: AgentRuntime[];
+  private readonly configFile: string;
 
-function loadCustom(): AgentRuntime[] {
-  try {
-    if (!fs.existsSync(CONFIG_FILE)) return [];
-    return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as AgentRuntime[];
-  } catch {
-    return [];
+  constructor() {
+    this.builtins = [...BUILTINS];
+    this.configFile = path.join(os.homedir(), ".config", "beads-ui", "runtimes.json");
+  }
+
+  list(): AgentRuntime[] {
+    return [...this.builtins, ...this.loadCustom()];
+  }
+
+  get(id: string): AgentRuntime | undefined {
+    return this.list().find((r) => r.id === id);
+  }
+
+  private loadCustom(): AgentRuntime[] {
+    try {
+      if (!fs.existsSync(this.configFile)) return [];
+      return JSON.parse(fs.readFileSync(this.configFile, "utf-8")) as AgentRuntime[];
+    } catch {
+      return [];
+    }
   }
 }
 
-
-export function listRuntimes(): AgentRuntime[] {
-  return [...BUILTINS, ...loadCustom()];
-}
-
-export function getRuntime(id: string): AgentRuntime | undefined {
-  return listRuntimes().find((r) => r.id === id);
-}
-
+export const runtimeRegistry = new RuntimeRegistry();

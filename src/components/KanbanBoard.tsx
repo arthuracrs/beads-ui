@@ -1,8 +1,9 @@
-import type { Issue, Status } from "../types";
+import type { IssueModel } from "../models/IssueModel";
+import type { Status } from "../types";
 import { TypeBadge, PriorityBadge } from "./Badge";
 
 interface Props {
-  issues: Issue[];
+  issues: IssueModel[];
   onSelect: (id: string) => void;
 }
 
@@ -14,14 +15,7 @@ const COLUMNS: { status: Status; label: string; icon: string; color: string }[] 
   { status: "closed",      label: "Closed",       icon: "✓", color: "text-[var(--text-muted)]" },
 ];
 
-function timeAgo(dateStr: string) {
-  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
-
-function KanbanCard({ issue, onSelect }: { issue: Issue; onSelect: () => void }) {
+function KanbanCard({ issue, onSelect }: { issue: IssueModel; onSelect: () => void }) {
   return (
     <button
       onClick={onSelect}
@@ -32,7 +26,7 @@ function KanbanCard({ issue, onSelect }: { issue: Issue; onSelect: () => void })
         <TypeBadge type={issue.issue_type} />
       </div>
 
-      <p className={`text-sm font-medium leading-snug ${issue.status === "closed" ? "text-[var(--text-muted)] line-through" : "text-[var(--text)]"}`}>
+      <p className={`text-sm font-medium leading-snug ${issue.isClosed() ? "text-[var(--text-muted)] line-through" : "text-[var(--text)]"}`}>
         {issue.title}
       </p>
 
@@ -40,7 +34,7 @@ function KanbanCard({ issue, onSelect }: { issue: Issue; onSelect: () => void })
         <span className="font-mono text-[10px] text-[var(--text-muted)]">{issue.id}</span>
         <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
           {issue.assignee && <span>@{issue.assignee}</span>}
-          <span>{timeAgo(issue.updated_at)}</span>
+          <span>{issue.timeAgo()}</span>
         </div>
       </div>
     </button>
@@ -50,7 +44,7 @@ function KanbanCard({ issue, onSelect }: { issue: Issue; onSelect: () => void })
 export function KanbanBoard({ issues, onSelect }: Props) {
   const grouped = Object.fromEntries(
     COLUMNS.map((col) => [col.status, issues.filter((i) => i.status === col.status)])
-  ) as Record<Status, Issue[]>;
+  ) as Record<Status, IssueModel[]>;
 
   return (
     <div className="flex h-full gap-3 overflow-x-auto p-4">

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
-import type { Issue, Stats } from "./types";
+import type { Stats } from "./types";
+import { IssueModel } from "./models/IssueModel";
 import { Sidebar, type View } from "./components/Sidebar";
 import { IssueRow } from "./components/IssueRow";
 import { KanbanBoard } from "./components/KanbanBoard";
@@ -39,7 +40,7 @@ const viewLabel: Record<View, string> = {
 export default function App() {
   const [view, setView] = useState<View>("all");
   const [layout, setLayout] = useState<Layout>("list");
-  const [issues, setIssues] = useState<Issue[]>([]);
+  const [issues, setIssues] = useState<IssueModel[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -57,15 +58,15 @@ export default function App() {
       setError("");
     }
     try {
-      let data: Issue[];
+      let data: IssueModel[];
       if (view === "ready") {
-        data = await api.issues.ready();
+        data = (await api.issues.ready()).map(IssueModel.from);
       } else {
         const params = viewToParams(view);
         const p = search ? { ...params, search } : params;
-        data = await api.issues.list(p);
+        data = (await api.issues.list(p)).map(IssueModel.from);
       }
-      setIssues(Array.isArray(data) ? data : []);
+      setIssues(data);
       if (silent) setError("");
     } catch (err: unknown) {
       if (!silent) {
