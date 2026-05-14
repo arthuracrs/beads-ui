@@ -123,14 +123,6 @@ class TmuxApi {
     return this.http.request<AgentExecution[]>("/tmux/sessions");
   }
 
-  sendInput(execId: string, text: string): Promise<{ ok: boolean }> {
-    return this.http.request<{ ok: boolean }>(`/executions/${execId}/input`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-  }
-
   kill(execId: string): Promise<{ ok: boolean }> {
     return this.http.request<{ ok: boolean }>(`/tmux/sessions/${execId}`, { method: "DELETE" });
   }

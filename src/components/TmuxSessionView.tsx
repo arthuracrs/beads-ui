@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
@@ -13,8 +13,7 @@ interface Props {
 
 export function TmuxSessionView({ executionId, onClose }: Props) {
   const [exec, setExec] = useState<AgentExecution | null>(null);
-  const [inputText, setInputText] = useState("");
-  const [sending, setSending] = useState(false);
+  const [paneData, setPaneData] = useState("");
   const [copied, setCopied] = useState(false);
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
@@ -83,6 +82,7 @@ export function TmuxSessionView({ executionId, onClose }: Props) {
       if (msg.type === "pane" && msg.data && xtermRef.current) {
         if (msg.data !== lastData) {
           lastData = msg.data;
+          setPaneData(msg.data);
           xtermRef.current.reset();
           // capture-pane outputs \n; xterm.js needs \r\n or it staircases each line
           xtermRef.current.write(msg.data.replace(/\r?\n/g, "\r\n"));
@@ -98,22 +98,12 @@ export function TmuxSessionView({ executionId, onClose }: Props) {
     return () => es.close();
   }, [executionId]);
 
-  const handleSend = useCallback(async () => {
-    if (!inputText.trim() || sending) return;
-    setSending(true);
-    try {
-      await api.tmux.sendInput(executionId, inputText);
-      setInputText("");
-    } catch {
-      // silently ignore
-    } finally {
-      setSending(false);
-    }
-  }, [executionId, inputText, sending]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") handleSend();
-  };
+  // Keyboard shortcut: Esc to close
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
 
   const handleCopyAttach = () => {
     if (!exec?.tmuxSession) return;
@@ -151,23 +141,10 @@ export function TmuxSessionView({ executionId, onClose }: Props) {
         />
       </div>
 
-      {/* Input footer */}
-      <div className="flex items-center gap-2 border-t border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 shrink-0">
-        <input
-          className="flex-1 rounded-md border border-[var(--border)] bg-[var(--surface2)] px-3 py-1.5 text-sm font-mono text-[var(--text)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent)] disabled:opacity-50"
-          placeholder={exec?.status === "running" ? "Send message to agent…" : "Session not running"}
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={exec?.status !== "running" || sending}
-        />
-        <button
-          onClick={handleSend}
-          disabled={!inputText.trim() || exec?.status !== "running" || sending}
-          className="shrink-0 rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-[var(--bg)] disabled:opacity-40 hover:opacity-90 transition-opacity"
-        >
-          Send
-        </button>
+      {/* Footer */}
+      <div className="flex items-center gap-4 border-t border-[var(--border)] bg-[var(--surface)] px-5 py-2 text-xs text-[var(--text-muted)]">
+        <span>{paneData.split("\n").length} lines · {(new Blob([paneData]).size / 1024).toFixed(1)} KB</span>
+        <span className="ml-auto">Press Esc to close</span>
       </div>
     </div>
   );

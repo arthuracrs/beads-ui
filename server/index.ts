@@ -526,29 +526,6 @@ app.get("/api/executions/:id/pane", async (req, res) => {
   req.on("close", () => clearInterval(interval));
 });
 
-// POST /api/executions/:id/input — send text to a running tmux session
-app.post("/api/executions/:id/input", async (req, res) => {
-  const execution = executionManager.get(req.params.id);
-  if (!execution || !execution.tmuxSession) {
-    res.status(404).json({ error: "Tmux execution not found" });
-    return;
-  }
-  const { text } = req.body as { text?: string };
-  if (typeof text !== "string" || text.length === 0) {
-    res.status(400).json({ error: "text is required" });
-    return;
-  }
-  if (text.length > 16384) {
-    res.status(400).json({ error: "text too long (max 16384 bytes)" });
-    return;
-  }
-  try {
-    await tmuxManager.sendKeys(execution.tmuxSession, text);
-    res.json({ ok: true });
-  } catch (err: unknown) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
 
 // ── Triggers ──────────────────────────────────────────────────────────────────
 

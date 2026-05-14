@@ -171,16 +171,6 @@ class TmuxManager {
             return "";
         }
     }
-    async sendKeys(name, text) {
-        this.assertSafe(name);
-        const CHUNK = 512;
-        for (let i = 0; i < text.length; i += CHUNK) {
-            await execFileAsync("tmux", ["send-keys", "-t", name, "-l", text.slice(i, i + CHUNK)]);
-            if (i + CHUNK < text.length)
-                await new Promise((r) => setTimeout(r, 10));
-        }
-        await execFileAsync("tmux", ["send-keys", "-t", name, "Enter"]);
-    }
     async kill(name) {
         this.assertSafe(name);
         try {
