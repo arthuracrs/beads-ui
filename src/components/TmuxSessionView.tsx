@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "../api";
 import type { AgentExecution } from "../types";
+import { AgentViewHeader } from "./AgentViewHeader";
 
 interface Props {
   executionId: string;
@@ -121,11 +122,6 @@ export function TmuxSessionView({ executionId, onClose }: Props) {
     if (e.key === "Enter") handleSend();
   };
 
-  const handleKill = async () => {
-    await api.tmux.kill(executionId);
-    onClose();
-  };
-
   const handleCopyAttach = () => {
     if (!exec?.tmuxSession) return;
     navigator.clipboard.writeText(`tmux attach -t ${exec.tmuxSession}`).then(() => {
@@ -134,60 +130,25 @@ export function TmuxSessionView({ executionId, onClose }: Props) {
     });
   };
 
-  const statusColor = exec?.status === "running"
-    ? "text-[var(--green)]"
-    : exec?.status === "failed"
-    ? "text-[var(--red)]"
-    : "text-[var(--text-muted)]";
-
-  const statusIcon = exec?.status === "running" ? "◐"
-    : exec?.status === "completed" ? "✓"
-    : exec?.status === "failed" ? "✗"
-    : "○";
+  const currentStatus = exec?.status ?? "running";
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#010409]">
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 shrink-0">
-        <button
-          onClick={onClose}
-          className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors text-sm"
-          title="Close viewer"
-        >
-          ✕
-        </button>
-
-        <span className={`text-sm ${statusColor}`}>{statusIcon}</span>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono text-[var(--text-muted)] shrink-0">
-              {exec?.issueId ?? "…"}
-            </span>
-            <span className="text-sm font-mono text-[var(--text)] truncate">
-              {exec?.tmuxSession ?? executionId}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {exec?.tmuxSession && (
-            <button
-              onClick={handleCopyAttach}
-              title={`Copy: tmux attach -t ${exec.tmuxSession}`}
-              className="rounded border border-[var(--border)] bg-[var(--surface2)] px-2.5 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
-            >
-              {copied ? "Copied!" : "⎋ Attach cmd"}
-            </button>
-          )}
+      <AgentViewHeader
+        id={exec?.issueId ?? executionId}
+        status={currentStatus}
+        onClose={onClose}
+        meta={exec?.tmuxSession}
+        actions={exec?.tmuxSession ? (
           <button
-            onClick={handleKill}
-            className="rounded border border-[var(--red)]/40 bg-[var(--red)]/10 px-2.5 py-1 text-xs text-[var(--red)] hover:bg-[var(--red)]/20 transition-colors"
+            onClick={handleCopyAttach}
+            title={`Copy: tmux attach -t ${exec.tmuxSession}`}
+            className="rounded border border-[var(--border)] bg-[var(--surface2)] px-2.5 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
           >
-            Close session
+            {copied ? "Copied!" : "⎋ Attach cmd"}
           </button>
-        </div>
-      </div>
+        ) : undefined}
+      />
 
       {/* Terminal */}
       <div

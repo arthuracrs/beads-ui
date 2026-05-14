@@ -1,26 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { AgentExecution, ExecStatus } from "../types";
-import { TimeFormatter } from "../lib/TimeFormatter";
+import type { ExecStatus } from "../types";
+import { AgentViewHeader } from "./AgentViewHeader";
 
 interface Props {
   executionId: string;
   onClose: () => void;
 }
-
-const statusStyle: Record<ExecStatus, string> = {
-  running:   "text-[var(--yellow)] border-[var(--yellow)]/30",
-  completed: "text-[var(--green)] border-[var(--green)]/30",
-  failed:    "text-[var(--red)] border-[var(--red)]/30",
-  cancelled: "text-[var(--text-muted)] border-[var(--border)]",
-};
-
-const statusIcon: Record<ExecStatus, string> = {
-  running:   "◐",
-  completed: "✓",
-  failed:    "✗",
-  cancelled: "○",
-};
 
 function stripAnsi(str: string): string {
   return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
@@ -29,23 +15,11 @@ function stripAnsi(str: string): string {
 export function ExecutionView({ executionId, onClose }: Props) {
   const [output, setOutput] = useState("");
   const [status, setStatus] = useState<ExecStatus>("running");
-  const [exec, setExec] = useState<AgentExecution | null>(null);
   const [cancelling, setCancelling] = useState(false);
-  const [tick, setTick] = useState(0);
   const outputRef = useRef<HTMLPreElement>(null);
   const esRef = useRef<EventSource | null>(null);
 
-  // tick for elapsed time while running
   useEffect(() => {
-    if (status !== "running") return;
-    const t = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(t);
-  }, [status]);
-
-  useEffect(() => {
-    // Load execution metadata
-    api.executions.list("").catch(() => null); // noop — we get exec data from SSE
-
     // Bypass Vite proxy for SSE — the proxy buffers the response body, breaking streaming
     const apiBase = import.meta.env.DEV ? "http://localhost:3001" : "";
     const es = new EventSource(`${apiBase}/api/executions/${executionId}/stream`);
@@ -76,13 +50,6 @@ export function ExecutionView({ executionId, onClose }: Props) {
     return () => es.close();
   }, [executionId]);
 
-  // Load exec metadata once for display
-  useEffect(() => {
-    // We pull it from the list endpoint by issue — but we don't know the issueId here.
-    // The SSE replay gives us output; for metadata we'll store a minimal shape in state as we go.
-    // The exec object will be populated from the executions list by the parent if needed.
-  }, []);
-
   async function handleCancel() {
     setCancelling(true);
     try {
@@ -101,55 +68,22 @@ export function ExecutionView({ executionId, onClose }: Props) {
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const _ = tick; // silence unused warning, used to force re-render for elapsed
-
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#0d1117]">
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-3">
-        <button
-          onClick={onClose}
-          className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors text-sm"
-        >
-          ← Back
-        </button>
-
-        <div className="h-4 w-px bg-[var(--border)]" />
-
-        <span className="font-mono text-xs text-[var(--text-muted)]">{executionId}</span>
-
-        <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs ${statusStyle[status]}`}>
-          <span>{statusIcon[status]}</span>
-          {status}
-          {status === "running" && (
-            <span className="text-[var(--text-muted)]">
-              · {exec ? TimeFormatter.elapsed(exec.startedAt) : "…"}
-            </span>
-          )}
-        </span>
-
-        {exec?.exitCode !== undefined && (
-          <span className="text-xs text-[var(--text-muted)]">exit {exec.exitCode}</span>
-        )}
-
-        <div className="ml-auto flex items-center gap-2">
-          {status === "running" && (
-            <button
-              onClick={handleCancel}
-              disabled={cancelling}
-              className="rounded-md border border-[var(--red)]/40 bg-[var(--red)]/10 px-3 py-1 text-xs text-[var(--red)] hover:bg-[var(--red)]/20 transition-colors disabled:opacity-50"
-            >
-              {cancelling ? "Cancelling…" : "Cancel"}
-            </button>
-          )}
+      <AgentViewHeader
+        id={executionId}
+        status={status}
+        onClose={onClose}
+        actions={status === "running" ? (
           <button
-            onClick={onClose}
-            className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none"
+            onClick={handleCancel}
+            disabled={cancelling}
+            className="rounded-md border border-[var(--red)]/40 bg-[var(--red)]/10 px-3 py-1 text-xs text-[var(--red)] hover:bg-[var(--red)]/20 transition-colors disabled:opacity-50"
           >
-            ×
+            {cancelling ? "Cancelling…" : "Cancel"}
           </button>
-        </div>
-      </div>
+        ) : undefined}
+      />
 
       {/* Terminal output */}
       <pre
@@ -166,9 +100,6 @@ export function ExecutionView({ executionId, onClose }: Props) {
       {/* Footer */}
       <div className="flex items-center gap-4 border-t border-[var(--border)] bg-[var(--surface)] px-5 py-2 text-xs text-[var(--text-muted)]">
         <span>{output.split("\n").length} lines · {(new Blob([output]).size / 1024).toFixed(1)} KB</span>
-        {status !== "running" && exec?.finishedAt && (
-          <span>Finished in {TimeFormatter.elapsed(exec.startedAt, exec.finishedAt)}</span>
-        )}
         <span className="ml-auto">Press Esc to close</span>
       </div>
     </div>
