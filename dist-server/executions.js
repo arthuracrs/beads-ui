@@ -163,7 +163,9 @@ class TmuxManager {
             const { stdout } = await execFileAsync("tmux", [
                 "capture-pane", "-p", "-e", "-t", name, "-S", `-${lines}`,
             ]);
-            return stdout;
+            // tmux pads every line to the pane width with spaces; trim them so xterm.js
+            // doesn't re-wrap at the wrong column when the viewport is narrower.
+            return stdout.split("\n").map((l) => l.trimEnd()).join("\n");
         }
         catch {
             return "";

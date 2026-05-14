@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "../api";
@@ -19,7 +18,6 @@ export function TmuxSessionView({ executionId, onClose }: Props) {
   const [copied, setCopied] = useState(false);
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   // Load initial exec metadata
@@ -46,6 +44,8 @@ export function TmuxSessionView({ executionId, onClose }: Props) {
     if (!termRef.current) return;
 
     const term = new Terminal({
+      cols: 220,
+      rows: 50,
       theme: {
         background: "#010409",
         foreground: "#e6edf3",
@@ -60,20 +60,12 @@ export function TmuxSessionView({ executionId, onClose }: Props) {
       scrollback: 3000,
     });
 
-    const fit = new FitAddon();
-    term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
     term.open(termRef.current);
-    fit.fit();
 
     xtermRef.current = term;
-    fitRef.current = fit;
-
-    const ro = new ResizeObserver(() => fitRef.current?.fit());
-    ro.observe(termRef.current);
 
     return () => {
-      ro.disconnect();
       term.dispose();
       xtermRef.current = null;
     };
@@ -92,7 +84,8 @@ export function TmuxSessionView({ executionId, onClose }: Props) {
         if (msg.data !== lastData) {
           lastData = msg.data;
           xtermRef.current.reset();
-          xtermRef.current.write(msg.data);
+          // capture-pane outputs \n; xterm.js needs \r\n or it staircases each line
+          xtermRef.current.write(msg.data.replace(/\r?\n/g, "\r\n"));
         }
       }
       if (msg.type === "done") {
@@ -150,12 +143,13 @@ export function TmuxSessionView({ executionId, onClose }: Props) {
         ) : undefined}
       />
 
-      {/* Terminal */}
-      <div
-        ref={termRef}
-        className="flex-1 overflow-hidden"
-        style={{ padding: "8px" }}
-      />
+      {/* Terminal — fixed at tmux pane dimensions (220×50), scrolls if viewport is narrower */}
+      <div className="flex-1 overflow-auto bg-[#010409]">
+        <div
+          ref={termRef}
+          style={{ padding: "8px", width: "max-content" }}
+        />
+      </div>
 
       {/* Input footer */}
       <div className="flex items-center gap-2 border-t border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 shrink-0">
