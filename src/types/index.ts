@@ -75,6 +75,15 @@ export interface AgentExecution {
   tmuxSession?: string;
 }
 
+export interface Formula {
+  name: string;
+  description?: string;
+  type?: string;
+  source?: string;
+  variables?: Record<string, unknown>;
+  steps?: unknown[];
+}
+
 export interface AgentTrigger {
   id: string;
   issueId: string;

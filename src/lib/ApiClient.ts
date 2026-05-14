@@ -1,4 +1,4 @@
-import type { Issue, Stats, AgentExecution, AgentTrigger, AgentRuntime } from "../types";
+import type { Issue, Stats, AgentExecution, AgentTrigger, AgentRuntime, Formula } from "../types";
 
 class HttpClient {
   constructor(private readonly base: string) {}
@@ -128,6 +128,18 @@ class TmuxApi {
   }
 }
 
+class FormulasApi {
+  constructor(private readonly http: HttpClient) {}
+
+  list(): Promise<Formula[]> {
+    return this.http.request<Formula[]>("/formulas");
+  }
+
+  get(name: string): Promise<Formula> {
+    return this.http.request<Formula>(`/formulas/${encodeURIComponent(name)}`);
+  }
+}
+
 class TriggersApi {
   constructor(private readonly http: HttpClient) {}
 
@@ -163,6 +175,7 @@ export class ApiClient {
   readonly executions: ExecutionsApi;
   readonly triggers: TriggersApi;
   readonly tmux: TmuxApi;
+  readonly formulas: FormulasApi;
   private readonly http: HttpClient;
 
   constructor(base: string) {
@@ -173,6 +186,7 @@ export class ApiClient {
     this.executions = new ExecutionsApi(this.http);
     this.triggers = new TriggersApi(this.http);
     this.tmux = new TmuxApi(this.http);
+    this.formulas = new FormulasApi(this.http);
   }
 
   initStatus(): Promise<{ initialized: boolean }> {

@@ -1,6 +1,6 @@
 import type { Status, IssueType } from "../types";
 
-export type View = "all" | "ready" | "sessions" | Status | IssueType;
+export type View = "all" | "ready" | "sessions" | "formulas" | Status | IssueType;
 
 interface Props {
   view: View;
@@ -11,6 +11,7 @@ const navItems: { label: string; view: View; icon: string }[] = [
   { label: "All Issues",   view: "all",         icon: "⊞" },
   { label: "Ready",        view: "ready",        icon: "→" },
   { label: "Sessions",     view: "sessions",     icon: "▣" },
+  { label: "Formulas",     view: "formulas",     icon: "⬡" },
   { label: "Open",         view: "open",         icon: "○" },
   { label: "In Progress",  view: "in_progress",  icon: "◐" },
   { label: "Blocked",      view: "blocked",      icon: "●" },

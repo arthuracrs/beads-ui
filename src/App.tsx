@@ -9,11 +9,13 @@ import { IssueDetail } from "./components/IssueDetail";
 import { ExecutionView } from "./components/ExecutionView";
 import { TmuxSessionsView } from "./components/TmuxSessionsView";
 import { TmuxSessionView } from "./components/TmuxSessionView";
+import { FormulasView } from "./components/FormulasView";
 import { CreateIssueModal } from "./components/CreateIssueModal";
 import { StatsBar } from "./components/StatsBar";
 
 const STATUS_VIEWS = new Set(["open", "in_progress", "blocked", "deferred", "closed"]);
 const TYPE_VIEWS = new Set(["bug", "feature", "task", "epic", "chore"]);
+const NON_ISSUE_VIEWS = new Set(["sessions", "formulas"]);
 
 function viewToParams(view: View): Record<string, string> | undefined {
   if (view === "all" || view === "ready") return undefined;
@@ -28,6 +30,7 @@ const viewLabel: Record<View, string> = {
   all: "All Issues",
   ready: "Ready to Work",
   sessions: "Sessions",
+  formulas: "Formulas",
   open: "Open",
   in_progress: "In Progress",
   blocked: "Blocked",
@@ -56,7 +59,7 @@ export default function App() {
   const [initializing, setInitializing] = useState(false);
 
   const loadIssues = useCallback(async (opts?: { silent?: boolean }) => {
-    if (view === "sessions") return;
+    if (NON_ISSUE_VIEWS.has(view)) return;
     const silent = opts?.silent === true;
     if (!silent) {
       setLoading(true);
@@ -179,7 +182,7 @@ export default function App() {
             {viewLabel[view]}
           </h1>
 
-          {view !== "ready" && view !== "sessions" && (
+          {view !== "ready" && !NON_ISSUE_VIEWS.has(view) && (
             <input
               className="flex-1 max-w-xs rounded-md border border-[var(--border)] bg-[var(--surface2)] px-3 py-1.5 text-sm text-[var(--text)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent)]"
               placeholder="Search…"
@@ -192,7 +195,7 @@ export default function App() {
             <StatsBar stats={stats} />
 
             {/* Layout toggle */}
-            {view !== "sessions" && (
+            {!NON_ISSUE_VIEWS.has(view) && (
               <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
                 <button
                   onClick={() => setLayout("list")}
@@ -240,20 +243,23 @@ export default function App() {
           <TmuxSessionsView onOpenSession={setSelectedTmuxExecId} />
         )}
 
+        {/* Formulas view */}
+        {view === "formulas" && <FormulasView />}
+
         {/* Content */}
-        {view !== "sessions" && loading && (
+        {!NON_ISSUE_VIEWS.has(view) && loading && (
           <div className="flex flex-1 items-center justify-center text-[var(--text-muted)] text-sm">
             Loading…
           </div>
         )}
 
-        {view !== "sessions" && !loading && error && (
+        {!NON_ISSUE_VIEWS.has(view) && !loading && error && (
           <div className="m-5 rounded-lg border border-[var(--red)]/30 bg-[var(--red)]/10 p-4 text-sm text-[var(--red)]">
             {error}
           </div>
         )}
 
-        {view !== "sessions" && !loading && !error && issues.length === 0 && (
+        {!NON_ISSUE_VIEWS.has(view) && !loading && !error && issues.length === 0 && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-[var(--text-muted)]">
             <span className="text-2xl">○</span>
             <span className="text-sm">No issues found</span>
@@ -263,7 +269,7 @@ export default function App() {
           </div>
         )}
 
-        {view !== "sessions" && !loading && !error && issues.length > 0 && (
+        {!NON_ISSUE_VIEWS.has(view) && !loading && !error && issues.length > 0 && (
           showKanban ? (
             <div className="flex-1 overflow-hidden">
               <KanbanBoard issues={issues} onSelect={setSelectedId} />
