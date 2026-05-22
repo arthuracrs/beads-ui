@@ -17,7 +17,8 @@
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build && tsc -p tsconfig.server.json",
     "prepare": "npm run build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:anagent": "node tests/anagent.integration.test.js"
   },
   "keywords": [],
   "author": "",

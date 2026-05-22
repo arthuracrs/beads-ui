@@ -36,6 +36,13 @@ const BUILTINS: AgentRuntime[] = [
     commandTemplate: `agent -p --force {prompt}`,
     builtin: true,
   },
+  {
+    id: "anagent",
+    name: "anagent",
+    description: "anagent CLI — runs prompts through configurable agent runtimes",
+    commandTemplate: `anagent run {prompt}`,
+    builtin: true,
+  },
 ];
 
 export class RuntimeRegistry {
