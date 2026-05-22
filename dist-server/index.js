@@ -338,6 +338,33 @@ app.post("/api/init", async (req, res) => {
         res.status(500).json({ error: e.stderr || e.message });
     }
 });
+// GET /api/formulas
+app.get("/api/formulas", async (_req, res) => {
+    try {
+        const raw = await bd.run("formula list --json");
+        const parsed = raw ? JSON.parse(raw) : null;
+        res.json(Array.isArray(parsed) ? parsed : []);
+    }
+    catch (err) {
+        const e = err;
+        res.status(500).json({ error: e.stderr || e.message });
+    }
+});
+// GET /api/formulas/:name
+app.get("/api/formulas/:name", async (req, res) => {
+    const name = req.params.name;
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+        return res.status(400).json({ error: "Invalid formula name" });
+    }
+    try {
+        const raw = await bd.run(`formula show ${name} --json`);
+        res.json(raw ? JSON.parse(raw) : {});
+    }
+    catch (err) {
+        const e = err;
+        res.status(500).json({ error: e.stderr || e.message });
+    }
+});
 // ── Agent Runtimes ────────────────────────────────────────────────────────────
 app.get("/api/runtimes", (_req, res) => {
     res.json(runtimes_1.runtimeRegistry.list());

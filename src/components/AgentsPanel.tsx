@@ -3,7 +3,7 @@ import { api } from "../api";
 import type { IssueModel } from "../models/IssueModel";
 import { ExecutionModel } from "../models/ExecutionModel";
 import type { AgentTrigger, ExecStatus } from "../types";
-import { RunAgentModal } from "./RunAgentModal";
+import { RunAgentModal, DEFAULT_PROMPT } from "./RunAgentModal";
 
 interface Props {
   issue: IssueModel;
@@ -121,6 +121,7 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
   const [showRunModal, setShowRunModal] = useState(false);
   const [showTriggerModal, setShowTriggerModal] = useState(false);
   const [activeTab, setActiveTab] = useState<"runs" | "triggers">("runs");
+  const [quickRunning, setQuickRunning] = useState(false);
 
   const loadExecutions = useCallback(async () => {
     try {
@@ -159,6 +160,16 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
     } catch { /* ignore */ }
   }
 
+  async function handleQuickRun() {
+    setQuickRunning(true);
+    try {
+      const exec = await api.executions.start(issue.id, "anagent", DEFAULT_PROMPT);
+      setExecutions((prev) => [ExecutionModel.from(exec), ...prev]);
+      onOpenExecution(exec.id, exec.runtimeKind);
+    } catch { /* modal path available via ⚙ for retry */ }
+    finally { setQuickRunning(false); }
+  }
+
   return (
     <section>
       {/* Section header */}
@@ -179,12 +190,22 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
         </div>
 
         {activeTab === "runs" ? (
-          <button
-            onClick={() => setShowRunModal(true)}
-            className="rounded-md bg-[var(--green)]/15 border border-[var(--green)]/30 px-3 py-1 text-xs text-[var(--green)] hover:bg-[var(--green)]/25 transition-colors"
-          >
-            ▶ Run Agent
-          </button>
+          <div className="flex items-center">
+            <button
+              onClick={handleQuickRun}
+              disabled={quickRunning}
+              className="rounded-l-md bg-[var(--green)]/15 border border-[var(--green)]/30 px-3 py-1 text-xs text-[var(--green)] hover:bg-[var(--green)]/25 transition-colors disabled:opacity-50"
+            >
+              {quickRunning ? "Starting…" : "▶ Run Agent"}
+            </button>
+            <button
+              onClick={() => setShowRunModal(true)}
+              className="rounded-r-md bg-[var(--green)]/15 border border-[var(--green)]/30 border-l-0 px-2 py-1 text-xs text-[var(--green)] hover:bg-[var(--green)]/25 transition-colors"
+              title="Configure run options"
+            >
+              ⚙
+            </button>
+          </div>
         ) : (
           <button
             onClick={() => setShowTriggerModal(true)}

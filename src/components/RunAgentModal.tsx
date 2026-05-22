@@ -9,7 +9,7 @@ interface Props {
   onStarted: (exec: AgentExecution) => void;
 }
 
-const DEFAULT_PROMPT = `Work on beads issue {id} (full context already prepended above). Complete the task using only the information available. Do not ask for more information. If you need more information from a person, leave a comment on the issue with specific instructions on what information you need and dont move the issue to done.
+export const DEFAULT_PROMPT = `Work on beads issue {id} (full context already prepended above). Complete the task using only the information available. Do not ask for more information. If you need more information from a person, leave a comment on the issue with specific instructions on what information you need and dont move the issue to done.
 
 When done:
 1. Run: bd comment {id} "<brief summary of what was done and proof of completion>"
@@ -23,7 +23,7 @@ function RuntimeIcon({ id }: { id: string }) {
 
 export function RunAgentModal({ issue, onClose, onStarted }: Props) {
   const [runtimes, setRuntimes] = useState<AgentRuntime[]>([]);
-  const [runtimeId, setRuntimeId] = useState("claude-code");
+  const [runtimeId, setRuntimeId] = useState("anagent");
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
