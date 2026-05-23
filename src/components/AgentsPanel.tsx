@@ -165,7 +165,6 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
     try {
       const exec = await api.executions.start(issue.id, "anagent", DEFAULT_PROMPT);
       setExecutions((prev) => [ExecutionModel.from(exec), ...prev]);
-      onOpenExecution(exec.id, exec.runtimeKind);
     } catch { /* modal path available via ⚙ for retry */ }
     finally { setQuickRunning(false); }
   }
