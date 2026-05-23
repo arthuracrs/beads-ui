@@ -36,7 +36,7 @@ const BUILTINS = [
         id: "anagent",
         name: "anagent",
         description: "anagent CLI — runs prompts through configurable agent runtimes",
-        commandTemplate: `anagent run {prompt}`,
+        commandTemplate: `npx --yes github:arthuracrs/anagent run {prompt}`,
         builtin: true,
     },
 ];
