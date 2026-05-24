@@ -81,52 +81,9 @@ class BdClient {
   }
 }
 
-// ── MCP config bootstrap ──────────────────────────────────────────────────────
-
-function mcpServerPath(): string {
-  // Production: compiled mcp-session.js lands in dist-server/ alongside this file
-  const sameDir = path.join(__dirname, "mcp-session.js");
-  if (fs.existsSync(sameDir)) return sameDir;
-  // Dev (tsx runner): __dirname = server/, dist-server is one level up
-  const distDir = path.join(__dirname, "..", "dist-server", "mcp-session.js");
-  if (fs.existsSync(distDir)) return distDir;
-  // TypeScript source fallback (tsx from node_modules)
-  return path.join(__dirname, "mcp-session.ts");
-}
-
-function ensureMcpConfig(projectDir: string): void {
-  const mcpJsonPath = path.join(projectDir, ".mcp.json");
-  let config: Record<string, unknown> = {};
-  try {
-    if (fs.existsSync(mcpJsonPath)) {
-      config = JSON.parse(fs.readFileSync(mcpJsonPath, "utf-8")) as Record<string, unknown>;
-    }
-  } catch {
-    // start fresh if file is corrupt
-  }
-  if (!config.mcpServers) config.mcpServers = {};
-  const servers = config.mcpServers as Record<string, unknown>;
-
-  const serverPath = mcpServerPath();
-  const isTs = serverPath.endsWith(".ts");
-  const command = isTs
-    ? path.join(__dirname, "..", "node_modules", ".bin", "tsx")
-    : process.execPath;
-
-  servers["beads-session"] = { command, args: [serverPath] };
-
-  try {
-    fs.writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
-    console.log(`beads-session MCP registered in ${mcpJsonPath}`);
-  } catch (err) {
-    console.warn(`Warning: could not write .mcp.json: ${(err as Error).message}`);
-  }
-}
-
 // ── App setup ─────────────────────────────────────────────────────────────────
 
 const bd = new BdClient();
-ensureMcpConfig(bd.projectDir);
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -494,7 +451,8 @@ app.get("/api/tmux/sessions", (_req, res) => {
   res.json(executionManager.getAllTmux());
 });
 
-// POST /api/tmux/sessions/:id/complete — agent signals task done (called by end_session MCP tool)
+// DELETE /api/tmux/sessions/:id — user kills a session from the UI
+// POST /api/tmux/sessions/:id/complete — agent signals task done
 app.post("/api/tmux/sessions/:id/complete", (req, res) => {
   const ok = executionManager.completeTmux(req.params.id);
   res.json({ ok });

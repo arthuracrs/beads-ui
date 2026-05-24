@@ -16,7 +16,8 @@ Before starting work:
 
 When done:
 1. Run: bd comment {id} --actor agent "<brief summary of what was done and proof of completion>"
-2. Run: bd close {id} --actor agent`;
+2. Run: bd close {id} --actor agent
+3. Run: curl -s -X POST $BEADS_API_URL/tmux/sessions/$BEADS_EXEC_ID/complete`;
 
 function RuntimeIcon({ id }: { id: string }) {
   if (id === "claude-code") return <span className="text-[var(--purple)]">◎</span>;
