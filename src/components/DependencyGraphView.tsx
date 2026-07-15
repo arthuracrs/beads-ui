@@ -140,6 +140,11 @@ function computeLayout(
   };
 }
 
+interface GraphData {
+  nodes?: Array<{ id: string; title?: string; status?: Status; issue_type?: string; priority?: number }>;
+  edges?: Array<{ from: string; to: string; type: DependencyType }>;
+}
+
 export function DependencyGraphView({ onSelectIssue }: Props) {
   const [issues, setIssues] = useState<IssueModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,8 +157,48 @@ export function DependencyGraphView({ onSelectIssue }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const data = (await api.issues.list({})).map(IssueModel.from);
-        setIssues(data);
+        const [issuesData, graphData] = await Promise.all([
+          api.issues.list({}),
+          api.graph(),
+        ]);
+        const issues = issuesData.map(IssueModel.from);
+        const issueMap = new Map(issues.map((i) => [i.id, i]));
+        
+        const graph = graphData as GraphData;
+        
+        if (graph.edges && graph.edges.length > 0) {
+          for (const edge of graph.edges) {
+            const targetIssue = issueMap.get(edge.to);
+            if (targetIssue) {
+              if (!targetIssue.dependencies) {
+                targetIssue.dependencies = [];
+              }
+              const sourceIssue = issueMap.get(edge.from);
+              targetIssue.dependencies.push({
+                id: edge.from,
+                dep_type: edge.type,
+                title: sourceIssue?.title,
+                status: sourceIssue?.status,
+              });
+            }
+          }
+        } else if (graph.nodes) {
+          for (const node of graph.nodes) {
+            const issue = issueMap.get(node.id);
+            if (issue && (node as { dependencies?: Array<{ id: string; dep_type: DependencyType }> }).dependencies) {
+              issue.dependencies = (node as { dependencies?: Array<{ id: string; dep_type: DependencyType }> }).dependencies?.map((dep) => {
+                const depIssue = issueMap.get(dep.id);
+                return {
+                  ...dep,
+                  title: depIssue?.title,
+                  status: depIssue?.status,
+                };
+              });
+            }
+          }
+        }
+        
+        setIssues(issues);
       } catch (err: unknown) {
         setError((err as Error).message);
       } finally {
