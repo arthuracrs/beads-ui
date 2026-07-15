@@ -73,50 +73,8 @@ class BdClient {
         return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
     }
 }
-// ── MCP config bootstrap ──────────────────────────────────────────────────────
-function mcpServerPath() {
-    // Production: compiled mcp-session.js lands in dist-server/ alongside this file
-    const sameDir = path_1.default.join(__dirname, "mcp-session.js");
-    if (fs_1.default.existsSync(sameDir))
-        return sameDir;
-    // Dev (tsx runner): __dirname = server/, dist-server is one level up
-    const distDir = path_1.default.join(__dirname, "..", "dist-server", "mcp-session.js");
-    if (fs_1.default.existsSync(distDir))
-        return distDir;
-    // TypeScript source fallback (tsx from node_modules)
-    return path_1.default.join(__dirname, "mcp-session.ts");
-}
-function ensureMcpConfig(projectDir) {
-    const mcpJsonPath = path_1.default.join(projectDir, ".mcp.json");
-    let config = {};
-    try {
-        if (fs_1.default.existsSync(mcpJsonPath)) {
-            config = JSON.parse(fs_1.default.readFileSync(mcpJsonPath, "utf-8"));
-        }
-    }
-    catch {
-        // start fresh if file is corrupt
-    }
-    if (!config.mcpServers)
-        config.mcpServers = {};
-    const servers = config.mcpServers;
-    const serverPath = mcpServerPath();
-    const isTs = serverPath.endsWith(".ts");
-    const command = isTs
-        ? path_1.default.join(__dirname, "..", "node_modules", ".bin", "tsx")
-        : process.execPath;
-    servers["beads-session"] = { command, args: [serverPath] };
-    try {
-        fs_1.default.writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
-        console.log(`beads-session MCP registered in ${mcpJsonPath}`);
-    }
-    catch (err) {
-        console.warn(`Warning: could not write .mcp.json: ${err.message}`);
-    }
-}
 // ── App setup ─────────────────────────────────────────────────────────────────
 const bd = new BdClient();
-ensureMcpConfig(bd.projectDir);
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
@@ -170,7 +128,7 @@ app.get("/api/issues/stats", async (_req, res) => {
 // GET /api/issues/:id
 app.get("/api/issues/:id", async (req, res) => {
     const id = req.params.id;
-    if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+    if (!/^[a-zA-Z0-9_.-]+$/.test(id)) {
         return res.status(400).json({ error: "Invalid issue id" });
     }
     try {
@@ -381,7 +339,7 @@ app.post("/api/executions", async (req, res) => {
         res.status(400).json({ error: "issueId, runtimeId, and prompt are required" });
         return;
     }
-    if (!/^[a-zA-Z0-9_-]+$/.test(issueId)) {
+    if (!/^[a-zA-Z0-9_.-]+$/.test(issueId)) {
         res.status(400).json({ error: "Invalid issue id" });
         return;
     }
@@ -476,7 +434,8 @@ app.get("/api/executions/:id/stream", (req, res) => {
 app.get("/api/tmux/sessions", (_req, res) => {
     res.json(executions_1.executionManager.getAllTmux());
 });
-// POST /api/tmux/sessions/:id/complete — agent signals task done (called by end_session MCP tool)
+// DELETE /api/tmux/sessions/:id — user kills a session from the UI
+// POST /api/tmux/sessions/:id/complete — agent signals task done
 app.post("/api/tmux/sessions/:id/complete", (req, res) => {
     const ok = executions_1.executionManager.completeTmux(req.params.id);
     res.json({ ok });

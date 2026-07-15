@@ -136,7 +136,7 @@ app.get("/api/issues/stats", async (_req, res) => {
 // GET /api/issues/:id
 app.get("/api/issues/:id", async (req, res) => {
   const id = req.params.id;
-  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+  if (!/^[a-zA-Z0-9_.-]+$/.test(id)) {
     return res.status(400).json({ error: "Invalid issue id" });
   }
   try {
@@ -344,7 +344,7 @@ app.post("/api/executions", async (req, res) => {
     res.status(400).json({ error: "issueId, runtimeId, and prompt are required" });
     return;
   }
-  if (!/^[a-zA-Z0-9_-]+$/.test(issueId)) {
+  if (!/^[a-zA-Z0-9_.-]+$/.test(issueId)) {
     res.status(400).json({ error: "Invalid issue id" });
     return;
   }
