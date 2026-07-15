@@ -229,6 +229,17 @@ app.post("/api/issues/:id/reopen", async (req, res) => {
   }
 });
 
+// GET /api/issues/:id/comments
+app.get("/api/issues/:id/comments", async (req, res) => {
+  try {
+    const raw = await bd.run(`comment list ${req.params.id} --json`);
+    res.json(raw ? BdClient.parseJson(raw) : []);
+  } catch (err: unknown) {
+    const e = err as { stderr?: string; message: string };
+    res.status(500).json({ error: e.stderr || e.message });
+  }
+});
+
 // POST /api/issues/:id/comment
 app.post("/api/issues/:id/comment", async (req, res) => {
   try {

@@ -70,6 +70,10 @@ class IssuesApi {
       body: JSON.stringify({ body }),
     });
   }
+
+  comments(id: string): Promise<unknown[]> {
+    return this.http.request<unknown[]>(`/issues/${id}/comments`);
+  }
 }
 
 class DepsApi {

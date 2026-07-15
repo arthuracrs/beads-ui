@@ -32,8 +32,13 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
       setError("");
     }
     try {
-      const data = await api.issues.get(issueId);
-      setIssue(IssueModel.from(data));
+      const [data, comments] = await Promise.all([
+        api.issues.get(issueId),
+        api.issues.comments(issueId).catch(() => []),
+      ]);
+      const issue = IssueModel.from(data);
+      issue.comments = comments as import("../types").Comment[];
+      setIssue(issue);
     } catch (err: unknown) {
       if (!silent) setError((err as Error).message);
     } finally {
