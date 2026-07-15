@@ -1,6 +1,6 @@
 {
   "name": "beads-ui",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Web interface for the Beads issue tracker",
   "main": "index.js",
   "bin": {
