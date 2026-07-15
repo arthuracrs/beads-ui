@@ -46,7 +46,10 @@ const depTypeColors: Record<DependencyType, string> = {
   blocks: "var(--red)",
   related: "var(--text-muted)",
   "parent-child": "var(--purple)",
-  "discovered-from": "var(--accent)",
+  "relates-to": "var(--accent)",
+  duplicates: "var(--orange)",
+  supersedes: "var(--yellow)",
+  "replies-to": "var(--green)",
 };
 
 function computeLayout(
@@ -272,7 +275,19 @@ export function DependencyGraphView({ onSelectIssue }: Props) {
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block w-3 h-0.5 rounded" style={{ background: "var(--accent)" }} />
-          discovered-from
+          relates-to
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-3 h-0.5 rounded" style={{ background: "var(--orange)" }} />
+          duplicates
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-3 h-0.5 rounded" style={{ background: "var(--yellow)" }} />
+          supersedes
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-3 h-0.5 rounded" style={{ background: "var(--green)" }} />
+          replies-to
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block w-3 h-0.5 rounded" style={{ background: "var(--text-muted)" }} />

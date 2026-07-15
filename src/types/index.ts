@@ -1,6 +1,6 @@
 export type Status = "open" | "in_progress" | "blocked" | "deferred" | "closed";
 export type IssueType = "bug" | "feature" | "task" | "epic" | "chore";
-export type DependencyType = "blocks" | "related" | "parent-child" | "discovered-from";
+export type DependencyType = "blocks" | "related" | "parent-child" | "relates-to" | "duplicates" | "supersedes" | "replies-to";
 
 export interface Issue {
   id: string;
