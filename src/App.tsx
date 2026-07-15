@@ -10,12 +10,13 @@ import { ExecutionView } from "./components/ExecutionView";
 import { TmuxSessionsView } from "./components/TmuxSessionsView";
 import { TmuxSessionView } from "./components/TmuxSessionView";
 import { FormulasView } from "./components/FormulasView";
+import { DependencyGraphView } from "./components/DependencyGraphView";
 import { CreateIssueModal } from "./components/CreateIssueModal";
 import { StatsBar } from "./components/StatsBar";
 
 const STATUS_VIEWS = new Set(["open", "in_progress", "blocked", "deferred", "closed"]);
 const TYPE_VIEWS = new Set(["bug", "feature", "task", "epic", "chore"]);
-const NON_ISSUE_VIEWS = new Set(["sessions", "formulas"]);
+const NON_ISSUE_VIEWS = new Set(["sessions", "formulas", "graph"]);
 
 function viewToParams(view: View): Record<string, string> | undefined {
   if (view === "all" || view === "ready") return undefined;
@@ -31,6 +32,7 @@ const viewLabel: Record<View, string> = {
   ready: "Ready to Work",
   sessions: "Sessions",
   formulas: "Formulas",
+  graph: "Dependency Graph",
   open: "Open",
   in_progress: "In Progress",
   blocked: "Blocked",
@@ -245,6 +247,9 @@ export default function App() {
 
         {/* Formulas view */}
         {view === "formulas" && <FormulasView />}
+
+        {/* Graph view */}
+        {view === "graph" && <DependencyGraphView onSelectIssue={setSelectedId} />}
 
         {/* Content */}
         {!NON_ISSUE_VIEWS.has(view) && loading && (

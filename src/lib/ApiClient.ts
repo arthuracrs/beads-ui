@@ -189,6 +189,10 @@ export class ApiClient {
     this.formulas = new FormulasApi(this.http);
   }
 
+  graph(): Promise<unknown> {
+    return this.http.request<unknown>("/graph");
+  }
+
   initStatus(): Promise<{ initialized: boolean }> {
     return this.http.request<{ initialized: boolean }>("/init-status");
   }
