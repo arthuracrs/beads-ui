@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
-import type { Stats } from "./types";
+import type { Stats, Status, IssueType } from "./types";
 import { IssueModel } from "./models/IssueModel";
 import { Sidebar, type View } from "./components/Sidebar";
 import { IssueRow } from "./components/IssueRow";
@@ -14,16 +14,7 @@ import { DependencyGraphView } from "./components/DependencyGraphView";
 import { CreateIssueModal } from "./components/CreateIssueModal";
 import { StatsBar } from "./components/StatsBar";
 
-const STATUS_VIEWS = new Set(["open", "in_progress", "blocked", "deferred", "closed"]);
-const TYPE_VIEWS = new Set(["bug", "feature", "task", "epic", "chore"]);
 const NON_ISSUE_VIEWS = new Set(["sessions", "formulas", "graph"]);
-
-function viewToParams(view: View): Record<string, string> | undefined {
-  if (view === "all" || view === "ready") return undefined;
-  if (STATUS_VIEWS.has(view)) return { status: view };
-  if (TYPE_VIEWS.has(view)) return { type: view };
-  return undefined;
-}
 
 type Layout = "list" | "board";
 
@@ -33,17 +24,23 @@ const viewLabel: Record<View, string> = {
   sessions: "Sessions",
   formulas: "Formulas",
   graph: "Dependency Graph",
-  open: "Open",
-  in_progress: "In Progress",
-  blocked: "Blocked",
-  deferred: "Deferred",
-  closed: "Closed",
-  bug: "Bugs",
-  feature: "Features",
-  task: "Tasks",
-  epic: "Epics",
-  chore: "Chores",
 };
+
+const statusFilters: { value: Status; label: string; icon: string }[] = [
+  { value: "open", label: "Open", icon: "○" },
+  { value: "in_progress", label: "In Progress", icon: "◐" },
+  { value: "blocked", label: "Blocked", icon: "●" },
+  { value: "deferred", label: "Deferred", icon: "❄" },
+  { value: "closed", label: "Closed", icon: "✓" },
+];
+
+const typeFilters: { value: IssueType; label: string; color: string }[] = [
+  { value: "bug", label: "Bug", color: "var(--red)" },
+  { value: "feature", label: "Feature", color: "var(--green)" },
+  { value: "task", label: "Task", color: "var(--text-muted)" },
+  { value: "epic", label: "Epic", color: "var(--purple)" },
+  { value: "chore", label: "Chore", color: "var(--text-muted)" },
+];
 
 export default function App() {
   const [view, setView] = useState<View>("all");
@@ -53,6 +50,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<Status | null>(null);
+  const [typeFilter, setTypeFilter] = useState<IssueType | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [selectedTmuxExecId, setSelectedTmuxExecId] = useState<string | null>(null);
@@ -72,9 +71,11 @@ export default function App() {
       if (view === "ready") {
         data = (await api.issues.ready()).map(IssueModel.from);
       } else {
-        const params = viewToParams(view);
-        const p = search ? { ...params, search } : params;
-        data = (await api.issues.list(p)).map(IssueModel.from);
+        const params: Record<string, string> = {};
+        if (statusFilter) params.status = statusFilter;
+        if (typeFilter) params.type = typeFilter;
+        if (search) params.search = search;
+        data = (await api.issues.list(Object.keys(params).length > 0 ? params : undefined)).map(IssueModel.from);
       }
       setIssues(data);
       if (silent) setError("");
@@ -86,7 +87,7 @@ export default function App() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [view, search]);
+  }, [view, search, statusFilter, typeFilter]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -134,6 +135,8 @@ export default function App() {
   function handleViewChange(v: View) {
     setView(v);
     setSearch("");
+    setStatusFilter(null);
+    setTypeFilter(null);
   }
 
   function handleUpdated() {
@@ -179,7 +182,7 @@ export default function App() {
 
       <main className="flex flex-1 flex-col overflow-hidden">
         {/* Toolbar */}
-        <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-3">
+        <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-3">
           <h1 className="text-sm font-semibold text-[var(--text)] shrink-0">
             {viewLabel[view]}
           </h1>
@@ -191,6 +194,44 @@ export default function App() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+          )}
+
+          {/* Filter chips */}
+          {!NON_ISSUE_VIEWS.has(view) && view !== "ready" && (
+            <>
+              <div className="flex items-center gap-1">
+                {statusFilters.map((f) => (
+                  <button
+                    key={f.value}
+                    onClick={() => setStatusFilter(statusFilter === f.value ? null : f.value)}
+                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                      statusFilter === f.value
+                        ? "bg-[var(--accent)]/15 text-[var(--accent)]"
+                        : "text-[var(--text-muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]"
+                    }`}
+                  >
+                    <span>{f.icon}</span>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                {typeFilters.map((f) => (
+                  <button
+                    key={f.value}
+                    onClick={() => setTypeFilter(typeFilter === f.value ? null : f.value)}
+                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                      typeFilter === f.value
+                        ? "bg-[var(--accent)]/15 text-[var(--accent)]"
+                        : "text-[var(--text-muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]"
+                    }`}
+                  >
+                    <span style={{ color: f.color }}>●</span>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
 
           <div className="ml-auto flex items-center gap-3">

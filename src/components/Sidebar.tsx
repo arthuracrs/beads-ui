@@ -1,6 +1,4 @@
-import type { Status, IssueType } from "../types";
-
-export type View = "all" | "ready" | "sessions" | "formulas" | "graph" | Status | IssueType;
+export type View = "all" | "ready" | "sessions" | "formulas" | "graph";
 
 interface Props {
   view: View;
@@ -10,22 +8,9 @@ interface Props {
 const navItems: { label: string; view: View; icon: string }[] = [
   { label: "All Issues",   view: "all",         icon: "⊞" },
   { label: "Ready",        view: "ready",        icon: "→" },
+  { label: "Graph",        view: "graph",        icon: "◇" },
   { label: "Sessions",     view: "sessions",     icon: "▣" },
   { label: "Formulas",     view: "formulas",     icon: "⬡" },
-  { label: "Graph",        view: "graph",        icon: "◇" },
-  { label: "Open",         view: "open",         icon: "○" },
-  { label: "In Progress",  view: "in_progress",  icon: "◐" },
-  { label: "Blocked",      view: "blocked",      icon: "●" },
-  { label: "Deferred",     view: "deferred",     icon: "❄" },
-  { label: "Closed",       view: "closed",       icon: "✓" },
-];
-
-const typeItems: { label: string; view: View; color: string }[] = [
-  { label: "Bug",     view: "bug",     color: "text-[var(--red)]" },
-  { label: "Feature", view: "feature", color: "text-[var(--green)]" },
-  { label: "Task",    view: "task",    color: "text-[var(--text-muted)]" },
-  { label: "Epic",    view: "epic",    color: "text-[var(--purple)]" },
-  { label: "Chore",   view: "chore",   color: "text-[var(--text-muted)]" },
 ];
 
 export function Sidebar({ view, onView }: Props) {
@@ -39,7 +24,7 @@ export function Sidebar({ view, onView }: Props) {
       </div>
 
       <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Views</div>
-      <div className="space-y-0.5 mb-4">
+      <div className="space-y-0.5">
         {navItems.map((item) => (
           <button
             key={item.view}
@@ -51,24 +36,6 @@ export function Sidebar({ view, onView }: Props) {
             }`}
           >
             <span className="text-xs w-4 text-center">{item.icon}</span>
-            {item.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">By Type</div>
-      <div className="space-y-0.5">
-        {typeItems.map((item) => (
-          <button
-            key={item.view}
-            onClick={() => onView(item.view)}
-            className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
-              view === item.view
-                ? "bg-[var(--accent)]/15 text-[var(--accent)]"
-                : "text-[var(--text-muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-            }`}
-          >
-            <span className={`text-xs w-4 text-center ${item.color}`}>●</span>
             {item.label}
           </button>
         ))}
