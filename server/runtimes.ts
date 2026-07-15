@@ -41,6 +41,7 @@ const BUILTINS: AgentRuntime[] = [
     name: "anagent",
     description: "anagent CLI — runs prompts through configurable agent runtimes",
     commandTemplate: `npx --yes github:arthuracrs/anagent run {prompt}`,
+    kind: "tmux",
     builtin: true,
   },
 ];
