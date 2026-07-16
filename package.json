@@ -16,7 +16,7 @@
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build && tsc -p tsconfig.server.json",
-    "prepare": "",
+    "prepare": "rm -rf node_modules",
     "preview": "vite preview",
     "test:anagent": "node tests/anagent.integration.test.js"
   },
