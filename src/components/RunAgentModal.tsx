@@ -16,7 +16,9 @@ Before starting work:
 
 When done:
 1. Run: bd comment {id} --actor agent "<brief summary of what was done and proof of completion>"
-2. Leave the issue open for review.`;
+2. Leave the issue open for review.
+
+Important: write comments in plain text only — no Markdown syntax (no **bold**, \`code\`, \`\`\`, -, etc.). Use line breaks, spacing, and indentation to make them readable for humans.`;
 
 function RuntimeIcon({ id }: { id: string }) {
   if (id === "claude-code") return <span className="text-[var(--purple)]">◎</span>;
