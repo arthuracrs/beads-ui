@@ -15,8 +15,8 @@
     "dev": "concurrently -n client,server -c cyan,green \"vite\" \"tsx watch server/index.ts\"",
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
-    "build": "./node_modules/.bin/vite build && ./node_modules/.bin/tsc -p tsconfig.server.json",
-    "prepare": "npm run build",
+    "build": "vite build && tsc -p tsconfig.server.json",
+    "prepare": "",
     "preview": "vite preview",
     "test:anagent": "node tests/anagent.integration.test.js"
   },
