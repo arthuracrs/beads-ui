@@ -105,17 +105,16 @@ export function RunAgentModal({ issue, onClose, onStarted }: Props) {
             </button>
             <button
               type="button"
-              disabled
               onClick={() => setMode("tmux")}
-              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-all opacity-40 ${
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-all ${
                 mode === "tmux"
                   ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
-                  : "border-[var(--border)] bg-[var(--surface2)] text-[var(--text-muted)]"
+                  : "border-[var(--border)] bg-[var(--surface2)] text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text)]"
               }`}
-              title="Interactive mode coming soon — use anagent directly in your terminal"
+              title="Run in a tmux session — watch and intervene from your terminal"
             >
               <span>◰ Interactive</span>
-              <span className="text-[10px] text-[var(--text-muted)]">Watching</span>
+              <span className="text-[10px] text-[var(--text-muted)]">tmux session</span>
             </button>
           </div>
         </div>

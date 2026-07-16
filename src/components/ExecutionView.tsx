@@ -19,6 +19,7 @@ interface NSEvent {
   exitCode?: number;
   output?: string;
   error?: string;
+  tmuxSession?: string;
 }
 
 function stripAnsi(str: string): string {
@@ -37,6 +38,8 @@ export function ExecutionView({ executionId, onClose }: Props) {
   const [output, setOutput] = useState("");
   const [status, setStatus] = useState<ExecStatus>("running");
   const [cancelling, setCancelling] = useState(false);
+  const [tmuxSession, setTmuxSession] = useState("");
+  const [copied, setCopied] = useState(false);
   const outputRef = useRef<HTMLPreElement>(null);
   const esRef = useRef<EventSource | null>(null);
 
@@ -48,6 +51,12 @@ export function ExecutionView({ executionId, onClose }: Props) {
     es.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data) as NSEvent;
+
+        if (msg.type === "start" && msg.tmuxSession) {
+          setTmuxSession(msg.tmuxSession);
+          setOutput((prev) => prev + `\x1b[2mInteractive mode — attached to tmux session\x1b[0m\n`);
+          scrollToBottom();
+        }
 
         if (msg.type === "text" && msg.delta) {
           setOutput((prev) => prev + msg.delta);
@@ -69,8 +78,9 @@ export function ExecutionView({ executionId, onClose }: Props) {
           scrollToBottom();
         }
 
-        if (msg.type === "done" && msg.status) {
-          setStatus(msg.status as ExecStatus);
+        if (msg.type === "done") {
+          if (msg.output) setOutput((prev) => prev + msg.output!);
+          setStatus("completed");
           es.close();
         }
 
@@ -111,6 +121,14 @@ export function ExecutionView({ executionId, onClose }: Props) {
     }
   }
 
+  function handleCopyAttach() {
+    if (!tmuxSession) return;
+    navigator.clipboard.writeText(`tmux attach -t ${tmuxSession}`).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   // Keyboard shortcut: Esc to close
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -125,13 +143,24 @@ export function ExecutionView({ executionId, onClose }: Props) {
         status={status}
         onClose={onClose}
         actions={status === "running" ? (
-          <button
-            onClick={handleCancel}
-            disabled={cancelling}
-            className="rounded-md border border-[var(--red)]/40 bg-[var(--red)]/10 px-3 py-1 text-xs text-[var(--red)] hover:bg-[var(--red)]/20 transition-colors disabled:opacity-50"
-          >
-            {cancelling ? "Cancelling…" : "Cancel"}
-          </button>
+          <div className="flex items-center gap-2">
+            {tmuxSession && (
+              <button
+                onClick={handleCopyAttach}
+                title={`Attach to tmux session: tmux attach -t ${tmuxSession}`}
+                className="rounded border border-[var(--border)] bg-[var(--surface2)] px-2.5 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+              >
+                {copied ? "Copied!" : "⎋ Attach"}
+              </button>
+            )}
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="rounded-md border border-[var(--red)]/40 bg-[var(--red)]/10 px-3 py-1 text-xs text-[var(--red)] hover:bg-[var(--red)]/20 transition-colors disabled:opacity-50"
+            >
+              {cancelling ? "Cancelling…" : "Cancel"}
+            </button>
+          </div>
         ) : undefined}
       />
 
@@ -144,12 +173,15 @@ export function ExecutionView({ executionId, onClose }: Props) {
         {output ? stripAnsi(output) : (
           <span className="text-[var(--text-muted)]">Waiting for output…</span>
         )}
-        {status === "running" && <span className="animate-pulse">▌</span>}
+        {status === "running" && !output && <span className="animate-pulse">▌</span>}
       </pre>
 
       {/* Footer */}
       <div className="flex items-center gap-4 border-t border-[var(--border)] bg-[var(--surface)] px-5 py-2 text-xs text-[var(--text-muted)]">
         <span>{output.split("\n").length} lines · {(new Blob([output]).size / 1024).toFixed(1)} KB</span>
+        {tmuxSession && (
+          <span className="font-mono text-[var(--accent)]">tmux: {tmuxSession}</span>
+        )}
         <span className="ml-auto">Press Esc to close</span>
       </div>
     </div>
