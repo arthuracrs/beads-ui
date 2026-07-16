@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
-import type { IssueModel } from "../models/IssueModel";
+import { IssueModel } from "../models/IssueModel";
 import { IssueDetailView } from "./IssueDetailView";
 import { AgentsPanel } from "./AgentsPanel";
 import { DependencyGraphView } from "./DependencyGraphView";
@@ -10,9 +10,10 @@ interface Props {
   onClose: () => void;
   onUpdated: () => void;
   onOpenExecution: (id: string) => void;
+  onSelectIssue?: (id: string) => void;
 }
 
-export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Props) {
+export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution, onSelectIssue }: Props) {
   const [issue, setIssue] = useState<IssueModel | null>(null);
   const [activeTab, setActiveTab] = useState<string>("details");
   const [loading, setLoading] = useState(true);
@@ -105,7 +106,7 @@ export function IssueDetail({ issueId, onClose, onUpdated, onOpenExecution }: Pr
             <AgentsPanel issue={issue} onOpenExecution={onOpenExecution} />
           )}
           {activeTab === "graph" && (
-            <DependencyGraphView issueId={issue.id} />
+            <DependencyGraphView onSelectIssue={(id) => onSelectIssue?.(id)} />
           )}
         </div>
       </div>
@@ -130,7 +131,7 @@ function CreateIssueForm({ onCreated, onClose }: { onCreated: () => void; onClos
     setSaving(true);
     setError("");
     try {
-      await api.issues.create({ title, description, type: type as any, priority, assignee });
+      await api.issues.create({ title, description, issue_type: type, priority, assignee } as Record<string, unknown> as any);
       onCreated();
     } catch (err: unknown) {
       setError((err as Error).message);

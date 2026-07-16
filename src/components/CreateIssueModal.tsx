@@ -30,7 +30,7 @@ export function CreateIssueModal({ onClose, onCreated }: Props) {
         issue_type: type,
         priority,
         assignee: assignee.trim() || undefined,
-      });
+      } as Record<string, unknown> as any);
       onCreated(issue);
     } catch (err: unknown) {
       setError((err as Error).message);

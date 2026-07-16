@@ -150,9 +150,10 @@ app.get("/api/issues/:id", async (req, res) => {
 // POST /api/issues
 app.post("/api/issues", async (req, res) => {
   try {
-    const { title, description, type, priority, assignee, label } = req.body;
+    const { title, description, type, issue_type: issueType, priority, assignee, label } = req.body;
+    const issueTypeValue = type || issueType;
     let args = `create "${title}" --json`;
-    if (type) args += ` -t ${type}`;
+    if (issueTypeValue) args += ` -t ${issueTypeValue}`;
     if (priority !== undefined) args += ` -p ${priority}`;
     if (description) args += ` -d "${description.replace(/"/g, '\\"')}"`;
     if (assignee) args += ` --assignee "${assignee}"`;

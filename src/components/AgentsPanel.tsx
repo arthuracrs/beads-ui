@@ -126,7 +126,7 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
   // Per-issue runtime preference
   const storageKey = `beads-ui:runtime:${issue.id}`;
   const storedPref = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
-  const [prefRuntime, setPrefRuntime] = useState(storedPref || "opencode");
+  const [prefRuntime] = useState(storedPref || "opencode");
 
   const loadExecutions = useCallback(async () => {
     try {

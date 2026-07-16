@@ -334,6 +334,7 @@ export default function App() {
           onClose={() => setSelectedId(null)}
           onUpdated={handleUpdated}
           onOpenExecution={(id) => setSelectedExecutionId(id)}
+          onSelectIssue={(id) => setSelectedId(id)}
         />
       )}
 

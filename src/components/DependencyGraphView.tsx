@@ -163,7 +163,7 @@ export function DependencyGraphView({ onSelectIssue }: Props) {
             try {
               const deps = await api.deps.list(issue.id);
               if (deps && Array.isArray(deps) && deps.length > 0) {
-                issue.dependencies = deps.map((dep: Record<string, unknown>) => ({
+                issue.dependencies = (deps as Record<string, unknown>[]).map((dep) => ({
                   id: String(dep.id || dep.issue_id || ""),
                   dep_type: (dep.dep_type || dep.type || "related") as DependencyType,
                   title: dep.title as string | undefined,
