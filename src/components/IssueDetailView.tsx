@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../api";
 import type { Status, IssueType, Comment } from "../types";
 import { IssueModel } from "../models/IssueModel";
@@ -20,6 +20,18 @@ export function IssueDetailView({ issue: initialIssue, onUpdated }: Props) {
   const [closeReason, setCloseReason] = useState("");
   const [showCloseForm, setShowCloseForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+
+  useEffect(() => {
+    api.issues.comments(issue.id).then((comments) => {
+      if (Array.isArray(comments)) {
+        setIssue((prev) => {
+          const updated = IssueModel.from(prev);
+          updated.comments = comments as Comment[];
+          return updated;
+        });
+      }
+    }).catch(() => {});
+  }, [issue.id]);
 
   async function updateField(patch: Partial<IssueModel>) {
     setActionLoading(true);
