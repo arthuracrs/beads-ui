@@ -1,342 +1,95 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
-import type { Stats, Status, IssueType } from "./types";
+import type { Issue } from "./types";
 import { IssueModel } from "./models/IssueModel";
-import { Sidebar, type View } from "./components/Sidebar";
-import { IssueRow } from "./components/IssueRow";
+import { Sidebar } from "./components/Sidebar";
 import { KanbanBoard } from "./components/KanbanBoard";
+import { StatsBar } from "./components/StatsBar";
 import { IssueDetail } from "./components/IssueDetail";
 import { ExecutionView } from "./components/ExecutionView";
-import { TmuxSessionsView } from "./components/TmuxSessionsView";
-import { TmuxSessionView } from "./components/TmuxSessionView";
-import { FormulasView } from "./components/FormulasView";
-import { DependencyGraphView } from "./components/DependencyGraphView";
-import { CreateIssueModal } from "./components/CreateIssueModal";
-import { StatsBar } from "./components/StatsBar";
-
-const NON_ISSUE_VIEWS = new Set(["sessions", "formulas", "graph"]);
-
-type Layout = "list" | "board";
-
-const viewLabel: Record<View, string> = {
-  all: "All Issues",
-  ready: "Ready to Work",
-  sessions: "Sessions",
-  formulas: "Formulas",
-  graph: "Dependency Graph",
-};
-
-const statusFilters: { value: Status; label: string; icon: string }[] = [
-  { value: "open", label: "Open", icon: "○" },
-  { value: "in_progress", label: "In Progress", icon: "◐" },
-  { value: "blocked", label: "Blocked", icon: "●" },
-  { value: "deferred", label: "Deferred", icon: "❄" },
-  { value: "closed", label: "Closed", icon: "✓" },
-];
-
-const typeFilters: { value: IssueType; label: string; color: string }[] = [
-  { value: "bug", label: "Bug", color: "var(--red)" },
-  { value: "feature", label: "Feature", color: "var(--green)" },
-  { value: "task", label: "Task", color: "var(--text-muted)" },
-  { value: "epic", label: "Epic", color: "var(--purple)" },
-  { value: "chore", label: "Chore", color: "var(--text-muted)" },
-];
+import "./index.css";
 
 export default function App() {
-  const [view, setView] = useState<View>("all");
-  const [layout, setLayout] = useState<Layout>("list");
-  const [issues, setIssues] = useState<IssueModel[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [issues, setIssues] = useState<Issue[]>([]);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<Status | null>(null);
-  const [typeFilter, setTypeFilter] = useState<IssueType | null>(null);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
-  const [selectedTmuxExecId, setSelectedTmuxExecId] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [initialized, setInitialized] = useState<boolean | null>(null);
-  const [initializing, setInitializing] = useState(false);
 
-  const loadIssues = useCallback(async (opts?: { silent?: boolean }) => {
-    if (NON_ISSUE_VIEWS.has(view)) return;
-    const silent = opts?.silent === true;
-    if (!silent) {
-      setLoading(true);
+  const loadIssues = useCallback(async () => {
+    try {
+      const data = await api.issues.list();
+      const sorted = data.sort((a, b) => {
+        const aP = a.priority ?? 0;
+        const bP = b.priority ?? 0;
+        if (aP !== bP) return bP - aP;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+      setIssues(sorted);
       setError("");
-    }
-    try {
-      let data: IssueModel[];
-      if (view === "ready") {
-        data = (await api.issues.ready()).map(IssueModel.from);
-      } else {
-        const params: Record<string, string> = {};
-        if (statusFilter) params.status = statusFilter;
-        if (typeFilter) params.type = typeFilter;
-        if (search) params.search = search;
-        data = (await api.issues.list(Object.keys(params).length > 0 ? params : undefined)).map(IssueModel.from);
-      }
-      setIssues(data);
-      if (silent) setError("");
     } catch (err: unknown) {
-      if (!silent) {
-        setError((err as Error).message);
-        setIssues([]);
-      }
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, [view, search, statusFilter, typeFilter]);
-
-  const loadStats = useCallback(async () => {
-    try {
-      const s = await api.issues.stats();
-      setStats(s);
-    } catch {
-      /* non-critical */
+      setError((err as Error).message);
     }
   }, []);
 
   useEffect(() => {
-    api.initStatus().then(({ initialized }) => setInitialized(initialized));
-  }, []);
-
-  useEffect(() => {
-    if (initialized) {
-      loadIssues();
-      loadStats();
-    }
-  }, [initialized, loadIssues, loadStats]);
-
-  // Background poll so agent/CLI-driven state changes show up without a manual refresh.
-  useEffect(() => {
-    if (!initialized) return;
-    const interval = setInterval(() => {
-      if (document.hidden) return;
-      loadIssues({ silent: true });
-      loadStats();
-    }, 5000);
+    loadIssues();
+    const interval = setInterval(loadIssues, 5000);
     return () => clearInterval(interval);
-  }, [initialized, loadIssues, loadStats]);
-
-  async function handleInit() {
-    setInitializing(true);
-    try {
-      await api.init();
-      setInitialized(true);
-    } catch (err: unknown) {
-      alert((err as Error).message);
-    } finally {
-      setInitializing(false);
-    }
-  }
-
-  function handleViewChange(v: View) {
-    setView(v);
-    setSearch("");
-    setStatusFilter(null);
-    setTypeFilter(null);
-  }
+  }, [loadIssues]);
 
   function handleUpdated() {
     loadIssues();
-    loadStats();
   }
 
-  if (initialized === null) {
-    return (
-      <div className="flex h-screen items-center justify-center text-[var(--text-muted)]">
-        Connecting…
-      </div>
-    );
-  }
-
-  if (!initialized) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4">
-        <div className="text-4xl">◎</div>
-        <h1 className="text-xl font-semibold text-[var(--text)]">Beads not initialized</h1>
-        <p className="max-w-sm text-center text-sm text-[var(--text-muted)]">
-          No Beads database found. Initialize one in the current directory to get started.
-        </p>
-        <button
-          onClick={handleInit}
-          disabled={initializing}
-          className="rounded-md bg-[var(--accent)] px-5 py-2.5 text-sm font-medium text-[var(--bg)] disabled:opacity-50 hover:opacity-90"
-        >
-          {initializing ? "Initializing…" : "Initialize Beads"}
-        </button>
-        <p className="text-xs text-[var(--text-muted)]">
-          Runs <code className="font-mono bg-[var(--surface2)] px-1 py-0.5 rounded">bd init</code> in the current directory.
-        </p>
-      </div>
-    );
-  }
-
-  const showKanban = layout === "board" && view !== "ready";
+  const filtered = issues.filter((i) => {
+    if (statusFilter && i.status !== statusFilter) return false;
+    if (typeFilter && i.issue_type !== typeFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!i.title.toLowerCase().includes(q) && !(i.description ?? "").toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar view={view} onView={handleViewChange} />
+    <div className="app-container">
+      <Sidebar
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
+        typeFilter={typeFilter}
+        onTypeFilterChange={setTypeFilter}
+      />
 
-      <main className="flex flex-1 flex-col overflow-hidden">
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-3">
-          <h1 className="text-sm font-semibold text-[var(--text)] shrink-0">
-            {viewLabel[view]}
-          </h1>
-
-          {view !== "ready" && !NON_ISSUE_VIEWS.has(view) && (
-            <input
-              className="flex-1 max-w-xs rounded-md border border-[var(--border)] bg-[var(--surface2)] px-3 py-1.5 text-sm text-[var(--text)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent)]"
-              placeholder="Search…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          )}
-
-          {/* Filter chips */}
-          {!NON_ISSUE_VIEWS.has(view) && view !== "ready" && (
-            <>
-              <div className="flex items-center gap-1">
-                {statusFilters.map((f) => (
-                  <button
-                    key={f.value}
-                    onClick={() => setStatusFilter(statusFilter === f.value ? null : f.value)}
-                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                      statusFilter === f.value
-                        ? "bg-[var(--accent)]/15 text-[var(--accent)]"
-                        : "text-[var(--text-muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-                    }`}
-                  >
-                    <span>{f.icon}</span>
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-1">
-                {typeFilters.map((f) => (
-                  <button
-                    key={f.value}
-                    onClick={() => setTypeFilter(typeFilter === f.value ? null : f.value)}
-                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                      typeFilter === f.value
-                        ? "bg-[var(--accent)]/15 text-[var(--accent)]"
-                        : "text-[var(--text-muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-                    }`}
-                  >
-                    <span style={{ color: f.color }}>●</span>
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          <div className="ml-auto flex items-center gap-3">
-            <StatsBar stats={stats} />
-
-            {/* Layout toggle */}
-            {!NON_ISSUE_VIEWS.has(view) && (
-              <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
-                <button
-                  onClick={() => setLayout("list")}
-                  title="List view"
-                  className={`px-2.5 py-1.5 text-sm transition-colors ${
-                    layout === "list"
-                      ? "bg-[var(--surface2)] text-[var(--text)]"
-                      : "text-[var(--text-muted)] hover:text-[var(--text)]"
-                  }`}
-                >
-                  ≡
-                </button>
-                <button
-                  onClick={() => setLayout("board")}
-                  title="Board view"
-                  className={`px-2.5 py-1.5 text-sm transition-colors border-l border-[var(--border)] ${
-                    layout === "board"
-                      ? "bg-[var(--surface2)] text-[var(--text)]"
-                      : "text-[var(--text-muted)] hover:text-[var(--text)]"
-                  }`}
-                >
-                  ⊞
-                </button>
-              </div>
-            )}
-
+      <main className="main-content">
+        <StatsBar issues={issues} />
+        <div className="toolbar">
+          <input
+            type="text"
+            placeholder="Search issues…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="search-input"
+          />
+          <div className="toolbar-actions">
             <button
-              onClick={() => setShowCreate(true)}
-              className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-[var(--bg)] hover:opacity-90 transition-opacity"
+              onClick={() => setSelectedId("__new__")}
+              className="btn-primary"
             >
-              + New
-            </button>
-            <button
-              onClick={() => { loadIssues(); loadStats(); }}
-              className="text-[var(--text-muted)] hover:text-[var(--text)] text-sm transition-colors"
-              title="Refresh"
-            >
-              ↻
+              + New Issue
             </button>
           </div>
         </div>
 
-        {/* Sessions view */}
-        {view === "sessions" && (
-          <TmuxSessionsView onOpenSession={setSelectedTmuxExecId} />
-        )}
+        {error && <div className="error-banner">{error}</div>}
 
-        {/* Formulas view */}
-        {view === "formulas" && <FormulasView />}
-
-        {/* Graph view */}
-        {view === "graph" && <DependencyGraphView onSelectIssue={setSelectedId} />}
-
-        {/* Content */}
-        {!NON_ISSUE_VIEWS.has(view) && loading && (
-          <div className="flex flex-1 items-center justify-center text-[var(--text-muted)] text-sm">
-            Loading…
-          </div>
-        )}
-
-        {!NON_ISSUE_VIEWS.has(view) && !loading && error && (
-          <div className="m-5 rounded-lg border border-[var(--red)]/30 bg-[var(--red)]/10 p-4 text-sm text-[var(--red)]">
-            {error}
-          </div>
-        )}
-
-        {!NON_ISSUE_VIEWS.has(view) && !loading && !error && issues.length === 0 && (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-[var(--text-muted)]">
-            <span className="text-2xl">○</span>
-            <span className="text-sm">No issues found</span>
-            {view === "ready" && (
-              <span className="text-xs">All tasks have open blockers or are closed.</span>
-            )}
-          </div>
-        )}
-
-        {!NON_ISSUE_VIEWS.has(view) && !loading && !error && issues.length > 0 && (
-          showKanban ? (
-            <div className="flex-1 overflow-hidden">
-              <KanbanBoard issues={issues} onSelect={setSelectedId} />
-            </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              <div className="mb-3 text-xs text-[var(--text-muted)]">
-                {issues.length} issue{issues.length !== 1 ? "s" : ""}
-              </div>
-              <div className="space-y-2">
-                {issues.map((issue) => (
-                  <IssueRow
-                    key={issue.id}
-                    issue={issue}
-                    onClick={() => setSelectedId(issue.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          )
-        )}
+        <KanbanBoard
+          issues={filtered.map((i) => IssueModel.from(i))}
+          onSelect={(id) => setSelectedId(id)}
+          onCreate={() => setSelectedId("__new__")}
+        />
       </main>
 
       {selectedId && (
@@ -344,12 +97,8 @@ export default function App() {
           issueId={selectedId}
           onClose={() => setSelectedId(null)}
           onUpdated={handleUpdated}
-          onOpenExecution={(id, runtimeKind) => {
-            if (runtimeKind === "tmux") {
-              setSelectedTmuxExecId(id);
-            } else {
-              setSelectedExecutionId(id);
-            }
+          onOpenExecution={(id) => {
+            setSelectedExecutionId(id);
           }}
         />
       )}
@@ -358,24 +107,6 @@ export default function App() {
         <ExecutionView
           executionId={selectedExecutionId}
           onClose={() => setSelectedExecutionId(null)}
-        />
-      )}
-
-      {selectedTmuxExecId && (
-        <TmuxSessionView
-          executionId={selectedTmuxExecId}
-          onClose={() => setSelectedTmuxExecId(null)}
-        />
-      )}
-
-      {showCreate && (
-        <CreateIssueModal
-          onClose={() => setShowCreate(false)}
-          onCreated={(issue) => {
-            setShowCreate(false);
-            handleUpdated();
-            setSelectedId(issue.id);
-          }}
         />
       )}
     </div>

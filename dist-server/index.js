@@ -60,15 +60,6 @@ class BdClient {
         });
         return { ok: true, output: stdout };
     }
-    static parseJson(raw) {
-        return JSON.parse(raw);
-    }
-    static unwrap(parsed) {
-        return (Array.isArray(parsed) ? parsed[0] : parsed);
-    }
-    static shQuote(s) {
-        return "'" + s.replace(/'/g, "'\\''") + "'";
-    }
     static interpolate(template, vars) {
         return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
     }
@@ -106,7 +97,7 @@ app.get("/api/issues", async (req, res) => {
 app.get("/api/issues/ready", async (_req, res) => {
     try {
         const raw = await bd.run("ready --json");
-        const issues = raw ? BdClient.parseJson(raw) : [];
+        const issues = raw ? JSON.parse(raw) : [];
         res.json(issues);
     }
     catch (err) {
@@ -118,7 +109,7 @@ app.get("/api/issues/ready", async (_req, res) => {
 app.get("/api/issues/stats", async (_req, res) => {
     try {
         const raw = await bd.run("status --json");
-        res.json(raw ? BdClient.parseJson(raw) : {});
+        res.json(raw ? JSON.parse(raw) : {});
     }
     catch (err) {
         const e = err;
@@ -170,7 +161,7 @@ app.post("/api/issues", async (req, res) => {
         if (label)
             args += ` --label "${label}"`;
         const raw = await bd.run(args);
-        res.json(BdClient.parseJson(raw));
+        res.json(JSON.parse(raw));
     }
     catch (err) {
         const e = err;
@@ -191,7 +182,8 @@ app.patch("/api/issues/:id", async (req, res) => {
         if (title)
             args += ` --title "${title.replace(/"/g, '\\"')}"`;
         const raw = await bd.run(args);
-        res.json(BdClient.unwrap(BdClient.parseJson(raw)));
+        const parsed = JSON.parse(raw);
+        res.json(Array.isArray(parsed) ? parsed[0] : parsed);
     }
     catch (err) {
         const e = err;
@@ -202,7 +194,8 @@ app.patch("/api/issues/:id", async (req, res) => {
 app.post("/api/issues/:id/claim", async (req, res) => {
     try {
         const raw = await bd.run(`update ${req.params.id} --claim --json`);
-        res.json(BdClient.unwrap(BdClient.parseJson(raw)));
+        const parsed = JSON.parse(raw);
+        res.json(Array.isArray(parsed) ? parsed[0] : parsed);
     }
     catch (err) {
         const e = err;
@@ -215,7 +208,8 @@ app.post("/api/issues/:id/close", async (req, res) => {
         const { reason } = req.body;
         const r = reason ? `--reason "${reason.replace(/"/g, '\\"')}"` : "";
         const raw = await bd.run(`close ${req.params.id} ${r} --json`);
-        res.json(BdClient.unwrap(BdClient.parseJson(raw)));
+        const parsed = JSON.parse(raw);
+        res.json(Array.isArray(parsed) ? parsed[0] : parsed);
     }
     catch (err) {
         const e = err;
@@ -226,7 +220,7 @@ app.post("/api/issues/:id/close", async (req, res) => {
 app.post("/api/issues/:id/reopen", async (req, res) => {
     try {
         const raw = await bd.run(`reopen ${req.params.id} --json`);
-        res.json(BdClient.unwrap(BdClient.parseJson(raw)));
+        res.json(JSON.parse(raw));
     }
     catch (err) {
         const e = err;
@@ -237,7 +231,7 @@ app.post("/api/issues/:id/reopen", async (req, res) => {
 app.get("/api/issues/:id/comments", async (req, res) => {
     try {
         const raw = await bd.run(`comments ${req.params.id} --json`);
-        res.json(raw ? BdClient.parseJson(raw) : []);
+        res.json(raw ? JSON.parse(raw) : []);
     }
     catch (err) {
         const e = err;
@@ -249,7 +243,7 @@ app.post("/api/issues/:id/comment", async (req, res) => {
     try {
         const { body } = req.body;
         const raw = await bd.run(`comment ${req.params.id} "${body.replace(/"/g, '\\"')}" --json`);
-        res.json(raw ? BdClient.parseJson(raw) : { ok: true });
+        res.json(raw ? JSON.parse(raw) : { ok: true });
     }
     catch (err) {
         const e = err;
@@ -260,7 +254,7 @@ app.post("/api/issues/:id/comment", async (req, res) => {
 app.get("/api/issues/:id/deps", async (req, res) => {
     try {
         const raw = await bd.run(`dep list ${req.params.id} --json`);
-        res.json(raw ? BdClient.parseJson(raw) : []);
+        res.json(raw ? JSON.parse(raw) : []);
     }
     catch (err) {
         const e = err;
@@ -273,7 +267,7 @@ app.post("/api/deps", async (req, res) => {
         const { child, parent, type } = req.body;
         const t = type ? `--type ${type}` : "";
         const raw = await bd.run(`dep add ${child} ${parent} ${t} --json`);
-        res.json(raw ? BdClient.parseJson(raw) : { ok: true });
+        res.json(raw ? JSON.parse(raw) : { ok: true });
     }
     catch (err) {
         const e = err;
@@ -284,7 +278,7 @@ app.post("/api/deps", async (req, res) => {
 app.get("/api/graph", async (_req, res) => {
     try {
         const raw = await bd.run("graph --json");
-        res.json(raw ? BdClient.parseJson(raw) : {});
+        res.json(raw ? JSON.parse(raw) : {});
     }
     catch (err) {
         const e = err;
@@ -335,8 +329,14 @@ app.get("/api/formulas/:name", async (req, res) => {
     }
 });
 // ── Agent Runtimes ────────────────────────────────────────────────────────────
-app.get("/api/runtimes", (_req, res) => {
-    res.json(runtimes_1.runtimeRegistry.list());
+app.get("/api/runtimes", async (_req, res) => {
+    try {
+        const runtimes = await runtimes_1.runtimeRegistry.list();
+        res.json(runtimes);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 // ── Agent Executions ──────────────────────────────────────────────────────────
 // GET /api/executions/issue/:issueId
@@ -345,23 +345,26 @@ app.get("/api/executions/issue/:issueId", (req, res) => {
 });
 // POST /api/executions
 app.post("/api/executions", async (req, res) => {
-    const { issueId, runtimeId, prompt } = req.body;
+    const { issueId, runtimeId, prompt, mode } = req.body;
     if (!issueId || !runtimeId || !prompt) {
-        res.status(400).json({ error: "issueId, runtimeId, and prompt are required" });
+        res.status(400).json({ error: "issueId, runtimeId, prompt are required" });
         return;
     }
     if (!/^[a-zA-Z0-9_.-]+$/.test(issueId)) {
         res.status(400).json({ error: "Invalid issue id" });
         return;
     }
-    const runtime = runtimes_1.runtimeRegistry.get(runtimeId);
+    const runtime = await runtimes_1.runtimeRegistry.get(runtimeId);
     if (!runtime) {
         res.status(400).json({ error: `Unknown runtime: ${runtimeId}` });
         return;
     }
+    const execMode = (mode || runtime.defaultMode);
     try {
+        // Fetch issue context
         const issues = await bd.listIssues();
         const issue = issues.find((i) => i.id === issueId);
+        // Interpolate prompt variables
         const vars = {
             id: issueId,
             title: String(issue?.title ?? ""),
@@ -371,42 +374,79 @@ app.post("/api/executions", async (req, res) => {
             type: String(issue?.issue_type ?? ""),
         };
         const resolvedPrompt = BdClient.interpolate(prompt, vars);
+        // Fetch bd show context for system prompt
         let context = "";
         try {
             context = await bd.run(`show ${issueId}`);
         }
         catch {
-            // If bd show fails, run anyway with just the user prompt.
+            // Run without context if bd show fails
         }
-        const basePrompt = context
-            ? `Issue context (output of \`bd show ${issueId}\`):\n\n${context}\n\n---\n\n${resolvedPrompt}`
-            : resolvedPrompt;
-        const finalPrompt = runtime.kind === "tmux"
-            ? `${basePrompt}\n\n---\n\nWhen you have fully completed this task, call the \`end_session\` MCP tool to close this session and mark the work as done.`
-            : basePrompt;
-        const quotedPrompt = BdClient.shQuote(finalPrompt);
-        const command = BdClient.interpolate(runtime.commandTemplate, { prompt: quotedPrompt });
-        if (runtime.kind === "tmux") {
-            const execution = executions_1.executionManager.startTmux(issueId, command, "manual", bd.projectDir);
-            res.json(execution);
+        const systemPrompt = context
+            ? `You are working on a beads issue.\n\nIssue context (bd show ${issueId}):\n\n${context}`
+            : "You are working on a beads issue.";
+        // Resolve anagent binary
+        const localDist = path_1.default.join(__dirname, "../../anagent/dist/cli.js");
+        const hasLocalAnagent = fs_1.default.existsSync(localDist);
+        let bin;
+        let useNpx = false;
+        if (process.env.ANAGENT_PATH) {
+            bin = process.env.ANAGENT_PATH;
+        }
+        else if (hasLocalAnagent) {
+            bin = "node";
         }
         else {
-            const execution = executions_1.executionManager.start(issueId, command, "manual", bd.projectDir);
-            res.json(execution);
+            const PATH = process.env.PATH || "";
+            let found = "";
+            for (const dir of PATH.split(":")) {
+                const candidate = path_1.default.join(dir, "anagent");
+                if (fs_1.default.existsSync(candidate)) {
+                    found = candidate;
+                    break;
+                }
+            }
+            if (found) {
+                bin = found;
+            }
+            else {
+                bin = "npx";
+                useNpx = true;
+            }
         }
+        // Build anagent args
+        const runtimeArgs = [
+            "run", resolvedPrompt,
+            execMode === "headless" ? "--stream" : "--json",
+            "--runtime", runtimeId,
+            "--mode", execMode,
+            "--system-prompt", systemPrompt,
+            "--cwd", bd.projectDir,
+        ];
+        let anagentArgs;
+        if (useNpx) {
+            anagentArgs = ["--yes", "github:arthuracrs/anagent", ...runtimeArgs];
+        }
+        else if (bin === "node") {
+            anagentArgs = [localDist, ...runtimeArgs];
+        }
+        else {
+            anagentArgs = runtimeArgs;
+        }
+        const execution = executions_1.executionManager.start(issueId, runtimeId, resolvedPrompt, execMode, systemPrompt, bd.projectDir, bin, anagentArgs, "manual");
+        res.json(execution);
     }
     catch (err) {
         const e = err;
         res.status(500).json({ error: e.stderr || e.message });
     }
 });
-// DELETE /api/executions/:id  (cancel)
+// DELETE /api/executions/:id (cancel)
 app.delete("/api/executions/:id", (req, res) => {
-    console.log(`Received request to cancel execution ${req.params.id}`);
     const ok = executions_1.executionManager.cancel(req.params.id);
     res.json({ ok });
 });
-// GET /api/executions/:id/stream  (SSE — live output)
+// GET /api/executions/:id/stream (SSE — live output)
 app.get("/api/executions/:id/stream", (req, res) => {
     const execution = executions_1.executionManager.get(req.params.id);
     if (!execution) {
@@ -423,78 +463,28 @@ app.get("/api/executions/:id/stream", (req, res) => {
         res.write(`data: ${JSON.stringify(payload)}\n\n`);
         res.flush?.();
     };
-    if (execution.output)
-        send({ type: "output", data: execution.output });
+    // If execution is already done, send stored events and done signal
+    if (execution.output) {
+        // Send stored output as text events
+        for (const line of execution.output.split("\n")) {
+            if (line.trim())
+                send({ type: "text", delta: line + "\n" });
+        }
+    }
     if (execution.status !== "running") {
         send({ type: "done", status: execution.status, exitCode: execution.exitCode });
         res.end();
         return;
     }
-    const unsub = executions_1.executionManager.subscribe(req.params.id, (chunk, done, status, exitCode) => {
-        if (chunk)
-            send({ type: "output", data: chunk });
+    const unsub = executions_1.executionManager.subscribe(req.params.id, (event, done, status, exitCode) => {
+        if (event)
+            send(event);
         if (done) {
             send({ type: "done", status, exitCode });
             res.end();
         }
     });
     req.on("close", unsub);
-});
-// ── Tmux sessions ─────────────────────────────────────────────────────────────
-// GET /api/tmux/sessions — all tmux executions (global sessions screen)
-app.get("/api/tmux/sessions", (_req, res) => {
-    res.json(executions_1.executionManager.getAllTmux());
-});
-// DELETE /api/tmux/sessions/:id — user kills a session from the UI
-// POST /api/tmux/sessions/:id/complete — agent signals task done
-app.post("/api/tmux/sessions/:id/complete", (req, res) => {
-    const ok = executions_1.executionManager.completeTmux(req.params.id);
-    res.json({ ok });
-});
-// DELETE /api/tmux/sessions/:id — user kills a session from the UI
-app.delete("/api/tmux/sessions/:id", (req, res) => {
-    const ok = executions_1.executionManager.cancel(req.params.id);
-    res.json({ ok });
-});
-// GET /api/executions/:id/pane  (SSE — polled tmux capture-pane output)
-app.get("/api/executions/:id/pane", async (req, res) => {
-    const execution = executions_1.executionManager.get(req.params.id);
-    if (!execution || !execution.tmuxSession) {
-        res.status(404).json({ error: "Tmux execution not found" });
-        return;
-    }
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.flushHeaders();
-    res.socket?.setNoDelay(true);
-    const send = (payload) => {
-        res.write(`data: ${JSON.stringify(payload)}\n\n`);
-        res.flush?.();
-    };
-    const sessionName = execution.tmuxSession;
-    // Send initial capture immediately
-    const initial = await executions_1.tmuxManager.capture(sessionName);
-    if (initial)
-        send({ type: "pane", data: initial });
-    if (execution.status !== "running") {
-        send({ type: "done", status: execution.status });
-        res.end();
-        return;
-    }
-    const interval = setInterval(async () => {
-        const exec = executions_1.executionManager.get(req.params.id);
-        const paneData = await executions_1.tmuxManager.capture(sessionName);
-        if (paneData)
-            send({ type: "pane", data: paneData });
-        if (exec.status !== "running") {
-            send({ type: "done", status: exec.status });
-            clearInterval(interval);
-            res.end();
-        }
-    }, 500);
-    req.on("close", () => clearInterval(interval));
 });
 // ── Triggers ──────────────────────────────────────────────────────────────────
 // GET /api/triggers/issue/:issueId

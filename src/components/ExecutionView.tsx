@@ -8,8 +8,29 @@ interface Props {
   onClose: () => void;
 }
 
+interface NSEvent {
+  type: string;
+  delta?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  text?: string;
+  isError?: boolean;
+  status?: string;
+  exitCode?: number;
+  output?: string;
+  error?: string;
+}
+
 function stripAnsi(str: string): string {
   return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
+}
+
+function formatToolInput(input: Record<string, unknown>): string {
+  if (typeof input.command === "string") {
+    return `\`${(input.command as string).slice(0, 300)}\``;
+  }
+  const s = JSON.stringify(input);
+  return s.length > 200 ? s.slice(0, 200) + "…" : s;
 }
 
 export function ExecutionView({ executionId, onClose }: Props) {
@@ -20,25 +41,46 @@ export function ExecutionView({ executionId, onClose }: Props) {
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    // Bypass Vite proxy for SSE — the proxy buffers the response body, breaking streaming
     const apiBase = import.meta.env.DEV ? "http://localhost:3001" : "";
     const es = new EventSource(`${apiBase}/api/executions/${executionId}/stream`);
     esRef.current = es;
 
     es.onmessage = (e) => {
-      const msg = JSON.parse(e.data) as { type: string; data?: string; status?: ExecStatus; exitCode?: number };
-      if (msg.type === "output" && msg.data) {
-        setOutput((prev) => prev + msg.data);
-        // auto-scroll
-        requestAnimationFrame(() => {
-          if (outputRef.current) {
-            outputRef.current.scrollTop = outputRef.current.scrollHeight;
-          }
-        });
-      }
-      if (msg.type === "done" && msg.status) {
-        setStatus(msg.status);
-        es.close();
+      try {
+        const msg = JSON.parse(e.data) as NSEvent;
+
+        if (msg.type === "text" && msg.delta) {
+          setOutput((prev) => prev + msg.delta);
+          scrollToBottom();
+        }
+
+        if (msg.type === "tool_use" && msg.name) {
+          const line = `\n\x1b[36m▶ ${msg.name}\x1b[0m ${formatToolInput(msg.input ?? {})}\n`;
+          setOutput((prev) => prev + line);
+          scrollToBottom();
+        }
+
+        if (msg.type === "tool_result" && msg.text) {
+          const text = msg.text.length > 500
+            ? msg.text.slice(0, 500) + "\n\x1b[2m…(truncated)\x1b[0m"
+            : msg.text;
+          const line = `\x1b[2m${text}\x1b[0m\n`;
+          setOutput((prev) => prev + line);
+          scrollToBottom();
+        }
+
+        if (msg.type === "done" && msg.status) {
+          setStatus(msg.status as ExecStatus);
+          es.close();
+        }
+
+        if (msg.type === "failed") {
+          if (msg.error) setOutput((prev) => prev + `\nError: ${msg.error}\n`);
+          setStatus("failed");
+          es.close();
+        }
+      } catch {
+        // Ignore malformed SSE events
       }
     };
 
@@ -49,6 +91,14 @@ export function ExecutionView({ executionId, onClose }: Props) {
 
     return () => es.close();
   }, [executionId]);
+
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      if (outputRef.current) {
+        outputRef.current.scrollTop = outputRef.current.scrollHeight;
+      }
+    });
+  }
 
   async function handleCancel() {
     setCancelling(true);

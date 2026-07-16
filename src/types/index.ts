@@ -54,9 +54,7 @@ export interface AgentRuntime {
   id: string;
   name: string;
   description: string;
-  commandTemplate: string;
-  builtin: boolean;
-  kind?: "process" | "tmux";
+  defaultMode: "headless" | "tmux";
 }
 
 export type ExecStatus = "running" | "completed" | "failed" | "cancelled";
@@ -64,15 +62,16 @@ export type ExecStatus = "running" | "completed" | "failed" | "cancelled";
 export interface AgentExecution {
   id: string;
   issueId: string;
-  command: string;
+  mode: "headless" | "tmux";
   status: ExecStatus;
   output: string;
   exitCode?: number;
   startedAt: string;
   finishedAt?: string;
   triggeredBy: string;
-  runtimeKind?: "process" | "tmux";
   tmuxSession?: string;
+  prompt?: string;
+  runtimeId?: string;
 }
 
 export interface Formula {

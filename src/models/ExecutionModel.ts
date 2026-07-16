@@ -4,15 +4,16 @@ import { TimeFormatter } from "../lib/TimeFormatter";
 export class ExecutionModel implements AgentExecution {
   id!: string;
   issueId!: string;
-  command!: string;
+  mode!: "headless" | "tmux";
   status!: ExecStatus;
   output!: string;
   exitCode?: number;
   startedAt!: string;
   finishedAt?: string;
   triggeredBy!: string;
-  runtimeKind?: "process" | "tmux";
   tmuxSession?: string;
+  prompt?: string;
+  runtimeId?: string;
 
   private constructor(data: AgentExecution) {
     Object.assign(this, data);

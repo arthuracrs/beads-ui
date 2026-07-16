@@ -107,28 +107,16 @@ class ExecutionsApi {
     return this.http.request<AgentExecution[]>(`/executions/issue/${issueId}`);
   }
 
-  start(issueId: string, runtimeId: string, prompt: string): Promise<AgentExecution> {
+  start(issueId: string, runtimeId: string, prompt: string, mode?: string): Promise<AgentExecution> {
     return this.http.request<AgentExecution>("/executions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ issueId, runtimeId, prompt }),
+      body: JSON.stringify({ issueId, runtimeId, prompt, mode }),
     });
   }
 
   cancel(id: string): Promise<{ ok: boolean }> {
     return this.http.request<{ ok: boolean }>(`/executions/${id}`, { method: "DELETE" });
-  }
-}
-
-class TmuxApi {
-  constructor(private readonly http: HttpClient) {}
-
-  list(): Promise<AgentExecution[]> {
-    return this.http.request<AgentExecution[]>("/tmux/sessions");
-  }
-
-  kill(execId: string): Promise<{ ok: boolean }> {
-    return this.http.request<{ ok: boolean }>(`/tmux/sessions/${execId}`, { method: "DELETE" });
   }
 }
 
@@ -178,7 +166,6 @@ export class ApiClient {
   readonly runtimes: RuntimesApi;
   readonly executions: ExecutionsApi;
   readonly triggers: TriggersApi;
-  readonly tmux: TmuxApi;
   readonly formulas: FormulasApi;
   private readonly http: HttpClient;
 
@@ -189,7 +176,6 @@ export class ApiClient {
     this.runtimes = new RuntimesApi(this.http);
     this.executions = new ExecutionsApi(this.http);
     this.triggers = new TriggersApi(this.http);
-    this.tmux = new TmuxApi(this.http);
     this.formulas = new FormulasApi(this.http);
   }
 

@@ -4,63 +4,84 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runtimeRegistry = exports.RuntimeRegistry = void 0;
+const child_process_1 = require("child_process");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
-const os_1 = __importDefault(require("os"));
-// NOTE: {prompt} is shell-quoted server-side, so templates must NOT wrap it
-// in their own quotes.
-const BUILTINS = [
-    {
-        id: "claude-code",
-        name: "Claude Code",
-        description: "Anthropic Claude Code CLI",
-        commandTemplate: `claude --dangerously-skip-permissions -p {prompt} --output-format stream-json --verbose --include-partial-messages`,
-        builtin: true,
-    },
-    {
-        id: "claude-tmux",
-        name: "Claude (tmux)",
-        description: "Interactive Claude TUI in a tmux session — watch and nudge it from the browser",
-        commandTemplate: `claude --dangerously-skip-permissions {prompt}`,
-        kind: "tmux",
-        builtin: true,
-    },
-    {
-        id: "cursor",
-        name: "Cursor",
-        description: "Cursor AI agent CLI (--force applies changes directly)",
-        commandTemplate: `agent -p --force {prompt}`,
-        builtin: true,
-    },
-    {
-        id: "anagent",
-        name: "anagent",
-        description: "anagent CLI — runs prompts through configurable agent runtimes",
-        commandTemplate: `npx --yes github:arthuracrs/anagent run {prompt}`,
-        kind: "tmux",
-        builtin: true,
-    },
-];
+function resolveAnagent() {
+    // 1. Environment variable override
+    if (process.env.ANAGENT_PATH) {
+        return { bin: process.env.ANAGENT_PATH, args: ["runtimes", "--json"] };
+    }
+    // 2. Local development — adjacent repo
+    const localDist = path_1.default.join(__dirname, "../../anagent/dist/cli.js");
+    if (fs_1.default.existsSync(localDist)) {
+        return { bin: "node", args: [localDist, "runtimes", "--json"] };
+    }
+    // 3. PATH
+    const PATH = process.env.PATH || "";
+    for (const dir of PATH.split(":")) {
+        const candidate = path_1.default.join(dir, "anagent");
+        if (fs_1.default.existsSync(candidate)) {
+            return { bin: candidate, args: ["runtimes", "--json"] };
+        }
+    }
+    // 4. npx fallback
+    return { bin: "npx", args: ["--yes", "github:arthuracrs/anagent", "runtimes", "--json"] };
+}
+function fetchRuntimesFromAnagent() {
+    const { bin, args } = resolveAnagent();
+    return new Promise((resolve, reject) => {
+        const proc = (0, child_process_1.spawn)(bin, args, {
+            stdio: ["ignore", "pipe", "pipe"],
+        });
+        let stdout = "";
+        let stderr = "";
+        proc.stdout.on("data", (d) => { stdout += d.toString(); });
+        proc.stderr.on("data", (d) => { stderr += d.toString(); });
+        proc.on("close", (code) => {
+            if (code === 0 && stdout.trim()) {
+                try {
+                    const parsed = JSON.parse(stdout);
+                    resolve(parsed.map((r) => ({
+                        id: r.id,
+                        name: r.name,
+                        description: r.description,
+                        defaultMode: r.defaultMode,
+                    })));
+                }
+                catch (e) {
+                    reject(new Error(`Failed to parse anagent runtimes output: ${e.message}`));
+                }
+            }
+            else {
+                reject(new Error(`anagent runtimes exited code ${code}: ${stderr.slice(0, 200)}`));
+            }
+        });
+        proc.on("error", reject);
+    });
+}
 class RuntimeRegistry {
     constructor() {
-        this.builtins = [...BUILTINS];
-        this.configFile = path_1.default.join(os_1.default.homedir(), ".config", "beads-ui", "runtimes.json");
+        this.cache = null;
+        this.cacheTime = 0;
+        this.CACHE_TTL = 30000;
     }
-    list() {
-        return [...this.builtins, ...this.loadCustom()];
-    }
-    get(id) {
-        return this.list().find((r) => r.id === id);
-    }
-    loadCustom() {
+    async list() {
+        if (this.cache && Date.now() - this.cacheTime < this.CACHE_TTL) {
+            return this.cache;
+        }
         try {
-            if (!fs_1.default.existsSync(this.configFile))
-                return [];
-            return JSON.parse(fs_1.default.readFileSync(this.configFile, "utf-8"));
+            this.cache = await fetchRuntimesFromAnagent();
+            this.cacheTime = Date.now();
         }
         catch {
-            return [];
+            this.cache = [];
         }
+        return this.cache;
+    }
+    async get(id) {
+        const runtimes = await this.list();
+        return runtimes.find((r) => r.id === id);
     }
 }
 exports.RuntimeRegistry = RuntimeRegistry;

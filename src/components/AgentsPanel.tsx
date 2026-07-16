@@ -7,7 +7,7 @@ import { RunAgentModal, DEFAULT_PROMPT } from "./RunAgentModal";
 
 interface Props {
   issue: IssueModel;
-  onOpenExecution: (id: string, runtimeKind?: string) => void;
+  onOpenExecution: (id: string) => void;
 }
 
 const statusIcon: Record<ExecStatus, string> = {
@@ -30,7 +30,7 @@ interface TriggerModalProps {
   onCreated: (t: AgentTrigger) => void;
 }
 
-const DEFAULT_CMD = `claude --dangerously-skip-permissions -p "Validate and test the result for issue {id}: {title}"`;
+const DEFAULT_CMD = `Validate and test the result for issue {id}: {title}`;
 
 function AddTriggerModal({ issueId, onClose, onCreated }: TriggerModalProps) {
   const [name, setName] = useState("");
@@ -123,10 +123,14 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
   const [activeTab, setActiveTab] = useState<"runs" | "triggers">("runs");
   const [quickRunning, setQuickRunning] = useState(false);
 
+  // Per-issue runtime preference
+  const storageKey = `beads-ui:runtime:${issue.id}`;
+  const storedPref = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
+  const [prefRuntime, setPrefRuntime] = useState(storedPref || "opencode");
+
   const loadExecutions = useCallback(async () => {
     try {
       const data = await api.executions.list(issue.id);
-      console.log(data)
       setExecutions(data.map(ExecutionModel.from));
     } catch { /* non-critical */ }
   }, [issue.id]);
@@ -141,7 +145,6 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
   useEffect(() => {
     loadExecutions();
     loadTriggers();
-    // Poll executions while any are running
     const interval = setInterval(loadExecutions, 2000);
     return () => clearInterval(interval);
   }, [loadExecutions, loadTriggers]);
@@ -163,8 +166,9 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
   async function handleQuickRun() {
     setQuickRunning(true);
     try {
-      const exec = await api.executions.start(issue.id, "anagent", DEFAULT_PROMPT);
+      const exec = await api.executions.start(issue.id, prefRuntime, DEFAULT_PROMPT, "headless");
       setExecutions((prev) => [ExecutionModel.from(exec), ...prev]);
+      onOpenExecution(exec.id);
     } catch { /* modal path available via ⚙ for retry */ }
     finally { setQuickRunning(false); }
   }
@@ -226,14 +230,14 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
           {executions.map((exec) => (
             <button
               key={exec.id}
-              onClick={() => onOpenExecution(exec.id, exec.runtimeKind)}
+              onClick={() => onOpenExecution(exec.id)}
               className="group w-full flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface2)] px-3 py-2.5 text-left hover:border-[var(--accent)]/40 transition-all"
             >
               <span className={`text-sm shrink-0 ${statusColor[exec.status]}`}>
                 {statusIcon[exec.status]}
               </span>
               <div className="flex-1 min-w-0">
-                <p className="truncate font-mono text-xs text-[var(--text)]">{exec.command}</p>
+                <p className="truncate font-mono text-xs text-[var(--text)]">{exec.runtimeId ?? exec.mode}</p>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-[10px] text-[var(--text-muted)]">{exec.timeAgo()}</span>
                   <span className="text-[10px] text-[var(--text-muted)]">·</span>
@@ -297,7 +301,7 @@ export function AgentsPanel({ issue, onOpenExecution }: Props) {
           onStarted={(exec) => {
             setShowRunModal(false);
             setExecutions((prev) => [ExecutionModel.from(exec), ...prev]);
-            onOpenExecution(exec.id, exec.runtimeKind);
+            onOpenExecution(exec.id);
           }}
         />
       )}
